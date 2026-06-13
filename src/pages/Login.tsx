@@ -149,10 +149,11 @@ export default function Login() {
                 <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, marginBottom: 6, color: 'var(--text-secondary)' }}>
                   Administrator Email
                 </label>
-                <input
+                 <input
                   type="email"
                   required
-                  placeholder="admin@cloudops-local.com"
+                  placeholder="Enter email address"
+                  autoComplete="off"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   style={{
@@ -173,7 +174,8 @@ export default function Login() {
                 <input
                   type="password"
                   required
-                  placeholder="••••••••"
+                  placeholder="Enter password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   style={{
