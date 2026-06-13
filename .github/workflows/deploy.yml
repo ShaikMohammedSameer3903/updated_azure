@@ -1,0 +1,204 @@
+name: Build and Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 1 — Build & Deploy Frontend to Azure Static Web Apps
+  # ─────────────────────────────────────────────────────────────────────────────
+  build_and_deploy_frontend:
+    runs-on: ubuntu-latest
+    name: Build and Deploy Frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build frontend (Vite)
+        run: npm run build
+        env:
+          VITE_API_URL: https://app-hc-prod-backend.azurewebsites.net
+          VITE_BACKEND_URL: https://app-hc-prod-backend.azurewebsites.net
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "/"          # App source code path (root)
+          api_location: ""           # API handled by separate backend job
+          output_location: "dist"    # Vite build output
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Build & Deploy Backend to Azure App Service
+  # ─────────────────────────────────────────────────────────────────────────────
+  build_and_deploy_backend:
+    runs-on: ubuntu-latest
+    name: Build and Deploy Backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # ── Install production dependencies inside server/ ────────────────────────
+      - name: Install production dependencies (server/)
+        working-directory: server
+        run: |
+          echo "=== Installing production dependencies ==="
+          npm ci --omit=dev
+          echo "=== Installed packages ==="
+          ls node_modules | head -30
+          echo "=== Verifying critical modules ==="
+          node -e "require('express');     console.log('[OK] express')"
+          node -e "require('cors');        console.log('[OK] cors')"
+          node -e "require('dotenv');      console.log('[OK] dotenv')"
+          node -e "require('helmet');      console.log('[OK] helmet')"
+          node -e "require('applicationinsights'); console.log('[OK] applicationinsights')"
+          node -e "require('@azure/identity'); console.log('[OK] @azure/identity')"
+
+      # ── Verify deployment files are present ───────────────────────────────────
+      - name: Verify deployment package contents
+        working-directory: server
+        run: |
+          echo "=== Deployment source path: server/ ==="
+          echo "--- Files present ---"
+          ls -la
+          echo "--- package.json check ---"
+          cat package.json
+          echo "--- index.js present ---"
+          [ -f index.js ] && echo "[OK] index.js found" || echo "[MISSING] index.js"
+          echo "--- node_modules/express present ---"
+          [ -d node_modules/express ] && echo "[OK] express installed" || echo "[MISSING] express not installed"
+          echo "--- node_modules/dotenv present ---"
+          [ -d node_modules/dotenv ] && echo "[OK] dotenv installed" || echo "[MISSING] dotenv not installed"
+
+      # ── Zip the server/ folder INCLUDING node_modules ────────────────────────
+      # Including node_modules ensures Azure doesn't need to rebuild (avoids 504)
+      - name: Create deployment zip from server/
+        run: |
+          echo "=== Zipping server/ folder (with node_modules) ==="
+          cd server
+          zip -r ../backend.zip . \
+            --exclude "*.pem" \
+            --exclude "cert.pem" \
+            --exclude "key.pem" \
+            --exclude "generate-certs.js" \
+            --exclude "*.db" \
+            --exclude "*.db-shm" \
+            --exclude "*.db-wal"
+          echo "=== Zip stats ==="
+          ls -lh ../backend.zip
+          echo "=== Contents preview (top 50 entries) ==="
+          unzip -l ../backend.zip | head -60
+
+      # ── Log in to Azure ───────────────────────────────────────────────────────
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # ── Configure App Service startup & env settings ──────────────────────────
+      - name: Configure Azure App Service settings
+        run: |
+          echo "=== Configuring App Service: app-hc-prod-backend ==="
+          az webapp config set \
+            --name app-hc-prod-backend \
+            --resource-group RG-Healthcare-Prod \
+            --startup-file "node index.js"
+
+          az webapp config appsettings set \
+            --name app-hc-prod-backend \
+            --resource-group RG-Healthcare-Prod \
+            --settings \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+              WEBSITE_NODE_DEFAULT_VERSION=~20 \
+              NODE_ENV=production \
+              PORT=8080 \
+              FRONTEND_URL=https://white-ocean-06cc11300.7.azurestaticapps.net
+
+      # ── Deploy using az webapp deploy (more reliable than webapps-deploy) ─────
+      - name: Deploy zip to Azure App Service
+        run: |
+          echo "=== Deploying backend.zip to app-hc-prod-backend ==="
+          az webapp deploy \
+            --name app-hc-prod-backend \
+            --resource-group RG-Healthcare-Prod \
+            --src-path ./backend.zip \
+            --type zip \
+            --async false \
+            --timeout 600
+
+      # ── Restart to apply new startup command ──────────────────────────────────
+      - name: Restart App Service
+        run: |
+          echo "=== Restarting App Service ==="
+          az webapp restart \
+            --name app-hc-prod-backend \
+            --resource-group RG-Healthcare-Prod
+          echo "=== Waiting 60s for cold start ==="
+          sleep 60
+
+      # ── Test endpoints ────────────────────────────────────────────────────────
+      - name: Test /health endpoint
+        run: |
+          echo "=== Testing https://app-hc-prod-backend.azurewebsites.net/health ==="
+          for i in 1 2 3; do
+            HTTP_CODE=$(curl -s -o /tmp/health_response.json -w "%{http_code}" \
+              --max-time 30 \
+              https://app-hc-prod-backend.azurewebsites.net/health \
+              -H "Accept: application/json")
+            echo "Attempt $i — HTTP Status Code: $HTTP_CODE"
+            cat /tmp/health_response.json
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "[OK] /health returned 200"
+              break
+            fi
+            echo "Retrying in 15s..."
+            sleep 15
+          done
+
+      # ── Fetch App Service logs (always runs) ───────────────────────────────────
+      - name: Fetch App Service startup logs
+        if: always()
+        run: |
+          echo "=== Fetching startup logs from App Service ==="
+          az webapp log download \
+            --name app-hc-prod-backend \
+            --resource-group RG-Healthcare-Prod \
+            --log-file /tmp/webapp_logs.zip || true
+          if [ -f /tmp/webapp_logs.zip ]; then
+            echo "--- Extracting logs ---"
+            unzip -o /tmp/webapp_logs.zip -d /tmp/webapp_logs/ || true
+            echo "--- Last 150 lines of docker/startup log ---"
+            find /tmp/webapp_logs/ -name "*.log" -exec tail -150 {} \; 2>/dev/null | tail -200
+          else
+            echo "[INFO] No log archive available"
+          fi
+          echo "=== Deployment summary ==="
+          echo "  App Name:        app-hc-prod-backend"
+          echo "  Resource Group:  RG-Healthcare-Prod"
+          echo "  Node Version:    20 LTS"
+          echo "  Startup:         node index.js"
+          echo "  Package:         server/ with node_modules pre-bundled"
+          echo "  SCM Build:       DISABLED (node_modules pre-bundled)"
+          echo "  FRONTEND_URL:    https://white-ocean-06cc11300.7.azurestaticapps.net"
+          echo "  Health URL:      https://app-hc-prod-backend.azurewebsites.net/health"
