@@ -78,37 +78,6 @@ export default function App() {
     checkConfig();
   }, []);
 
-  if (isConfigValid === null) {
-    return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: '#0c0f1d',
-        color: '#ffffff',
-        fontFamily: 'system-ui, sans-serif'
-      }}>
-        <div style={{
-          width: 28, height: 28,
-          display: 'grid', gridTemplateColumns: '1fr 1fr',
-          gridTemplateRows: '1fr 1fr', gap: 3, borderRadius: 6, overflow: 'hidden',
-          marginBottom: 16
-        }} className="spinner">
-          <span style={{ background: '#0078d4', borderRadius: 2 }} />
-          <span style={{ background: '#00B7C3', borderRadius: 2 }} />
-          <span style={{ background: '#107C10', borderRadius: 2 }} />
-          <span style={{ background: '#FFB900', borderRadius: 2 }} />
-        </div>
-        <div>Verifying environment configuration...</div>
-      </div>
-    );
-  }
-
-  if (isConfigValid === false) {
-    return <DiagnosticPage onResolved={() => setIsConfigValid(true)} />;
-  }
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -263,6 +232,38 @@ export default function App() {
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
   }, [isAuthenticated, getAzureToken]);
+
+  if (isConfigValid === null) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: '#0c0f1d',
+        color: '#ffffff',
+        fontFamily: 'system-ui, sans-serif'
+      }}>
+        <div style={{
+          width: 28, height: 28,
+          display: 'grid', gridTemplateColumns: '1fr 1fr',
+          gridTemplateRows: '1fr 1fr', gap: 3, borderRadius: 6, overflow: 'hidden',
+          marginBottom: 16
+        }} className="spinner">
+          <span style={{ background: '#0078d4', borderRadius: 2 }} />
+          <span style={{ background: '#00B7C3', borderRadius: 2 }} />
+          <span style={{ background: '#107C10', borderRadius: 2 }} />
+          <span style={{ background: '#FFB900', borderRadius: 2 }} />
+        </div>
+        <div>Verifying environment configuration...</div>
+      </div>
+    );
+  }
+
+  if (isConfigValid === false) {
+    return <DiagnosticPage onResolved={() => setIsConfigValid(true)} />;
+  }
 
   if (isLoading) {
     return (
