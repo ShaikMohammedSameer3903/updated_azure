@@ -26,19 +26,13 @@ async function getSubscription(tenantId, subscriptionId) {
 /**
  * Get Defender for Cloud Secure Score via REST API.
  */
-async function getSecureScore(tenantId, subscriptionId) {
+async function getSecureScore(tenantId, subscriptionId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const scoreMap = { 'sub-healthcare-prod': 92, 'sub-university-prod': 82, 'sub-corporate-it': 78, 'sub-dev-test': 65 };
-    const score = scoreMap[sub.id] || 80;
-    return { score, max: 100, percentage: score, weight: 10, displayName: 'ascScore' };
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
+
   try {
     const token = await getAccessToken(
       clients.credential,
@@ -69,22 +63,13 @@ async function getSecureScore(tenantId, subscriptionId) {
 /**
  * Get Defender for Cloud recommendations (security tasks).
  */
-async function getDefenderRecommendations(tenantId, subscriptionId) {
+async function getDefenderRecommendations(tenantId, subscriptionId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const isHealthcare = sub.id === 'sub-healthcare-prod';
-    return [
-      { id: 'rec-001', name: 'EnableMFA', title: 'Enable MFA for all privileged accounts', severity: 'High', state: 'Active', category: 'Identity', createdAt: new Date().toISOString(), description: 'Multi-factor authentication should be required.' },
-      { id: 'rec-002', name: 'EnableDiskEncryption', title: 'Apply disk encryption on virtual machines', severity: 'Medium', state: 'Active', category: 'Compute', createdAt: new Date().toISOString(), description: 'Disk encryption helps protect and safeguard your data.' },
-      ...(isHealthcare ? [{ id: 'rec-003', name: 'EnableAuditLogs', title: 'Enable SQL Auditing for HIPAA compliance', severity: 'High', state: 'Active', category: 'Data', createdAt: new Date().toISOString(), description: 'Audit logs required for HIPAA BAA.' }] : []),
-    ];
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
+
   try {
     const token = await getAccessToken(
       clients.credential,
@@ -117,21 +102,13 @@ async function getDefenderRecommendations(tenantId, subscriptionId) {
 /**
  * Get active Defender for Cloud security alerts.
  */
-async function getDefenderAlerts(tenantId, subscriptionId) {
+async function getDefenderAlerts(tenantId, subscriptionId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const isHealthcare = sub.id === 'sub-healthcare-prod';
-    if (!isHealthcare) return [];
-    return [
-      { id: 'alert-d-001', name: 'UnusualKeyVaultAccess', displayName: 'Unusual Key Vault access pattern', severity: 'High', status: 'Active', description: 'Multiple unauthorized secret access attempts detected.', resourceId: 'kv-hc-prod-secrets', alertType: 'KeyVault.Access.Anomaly', detectedAt: new Date(Date.now() - 3600000).toISOString(), remediationSteps: ['Review access policies', 'Enable soft delete', 'Rotate secrets'] }
-    ];
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
+
   try {
     const token = await getAccessToken(
       clients.credential,
@@ -165,21 +142,13 @@ async function getDefenderAlerts(tenantId, subscriptionId) {
 /**
  * Get Defender for Cloud compliance results.
  */
-async function getComplianceResults(tenantId, subscriptionId) {
+async function getComplianceResults(tenantId, subscriptionId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const isHealthcare = sub.id === 'sub-healthcare-prod';
-    const isUniversity = sub.id === 'sub-university-prod';
-    return [
-      { id: `comp-${sub.id}-001`, name: isHealthcare ? 'HIPAA/HITRUST' : isUniversity ? 'FERPA' : 'CIS Microsoft Azure Foundations', assessedAt: new Date().toISOString(), resourceCount: 6, passedControls: isHealthcare ? 28 : isUniversity ? 22 : 18, failedControls: isHealthcare ? 2 : isUniversity ? 4 : 3, skippedControls: 0, passedControlsPercentage: isHealthcare ? 93 : isUniversity ? 85 : 86 }
-    ];
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
+
   try {
     const token = await getAccessToken(
       clients.credential,

@@ -129,8 +129,8 @@ ${budgetLines}
 
 **Actionable Cost Optimization Recommendations:**
 1. ${suggestSavings}
-2. Ensure you register Azure Hybrid Benefit (AHUB) for your Windows Server VMs (like \`vm-hc-prod-web\`) to save up to 40% on licensing fees.
-3. Set up automated runbooks to shut down dev/test VMs (in \`Contoso Sandbox-DevTest\`) during non-business hours.`;
+2. Ensure you register Azure Hybrid Benefit (AHUB) for your Windows Server VMs to save up to 40% on licensing fees.
+3. Set up automated runbooks to shut down dev/test VMs during non-business hours.`;
   }
   
   else if (msg.includes('incident') || msg.includes('alert') || msg.includes('error') || msg.includes('broken') || msg.includes('critical')) {
@@ -179,7 +179,7 @@ Your aggregate tenant security score is **82%**.
     // Default fallback welcome message
     reply = `Hello! I am your CloudOps Enterprise AI Copilot. 
 
-I am connected to your tenant **Contoso Health Systems** and have indexed:
+I am connected to your tenant and have indexed:
 - **${ctx.subscriptions.length} Subscriptions**
 - **${ctx.totalResources} Discovered Resources**
 - **${ctx.incidents.length} Active Incidents**

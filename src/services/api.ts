@@ -14,9 +14,19 @@ interface RequestOptions {
 
 class ApiService {
   private tokenProvider: (() => Promise<string | null>) | null = null;
+  private azureTokenProvider: (() => Promise<string | null>) | null = null;
+  private onUnauthorized: (() => void) | null = null;
 
   setTokenProvider(provider: () => Promise<string | null>) {
     this.tokenProvider = provider;
+  }
+
+  setAzureTokenProvider(provider: () => Promise<string | null>) {
+    this.azureTokenProvider = provider;
+  }
+
+  setOnUnauthorized(handler: () => void) {
+    this.onUnauthorized = handler;
   }
 
   private async getHeaders(): Promise<Record<string, string>> {
@@ -24,10 +34,27 @@ class ApiService {
       'Content-Type': 'application/json',
     };
 
+    let token: string | null = null;
     if (this.tokenProvider) {
-      const token = await this.tokenProvider();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      token = await this.tokenProvider();
+    }
+
+    if (!token) {
+      token = localStorage.getItem('cloudops-local-token');
+    }
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    if (this.azureTokenProvider) {
+      try {
+        const azureToken = await this.azureTokenProvider();
+        if (azureToken) {
+          headers['X-Azure-Token'] = azureToken;
+        }
+      } catch (err) {
+        console.warn('[API] Failed to retrieve Azure token:', err);
       }
     }
 
@@ -56,6 +83,9 @@ class ApiService {
     });
 
     if (!response.ok) {
+      if (response.status === 401 && this.onUnauthorized) {
+        this.onUnauthorized();
+      }
       const errorBody = await response.json().catch(() => ({ error: 'Unknown error' }));
       throw new ApiError(
         errorBody.message || errorBody.error || `HTTP ${response.status}`,

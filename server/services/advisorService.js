@@ -24,23 +24,11 @@ async function getAccessToken(credential, scope) {
  * Fetch all Azure Advisor recommendations for a subscription.
  * Categories: Cost, Security, Reliability, OperationalExcellence, Performance
  */
-async function getAdvisorRecommendations(tenantId, subscriptionId) {
+async function getAdvisorRecommendations(tenantId, subscriptionId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const isHealthcare = sub.id === 'sub-healthcare-prod';
-    const isUniversity = sub.id === 'sub-university-prod';
-    return [
-      { id: `adv-${sub.id}-001`, name: 'RightSizeVM', category: 'Cost', impact: 'Medium', impactedField: 'Microsoft.Compute/virtualMachines', impactedValue: isHealthcare ? 'vm-hc-prod-web' : 'vm-corp-ad-01', resourceId: `/subscriptions/${sub.subscription_id}`, shortDescription: 'Right-size or shut down underutilized virtual machines', potentialBenefits: 'Estimated 30% cost reduction', lastUpdated: new Date().toISOString() },
-      { id: `adv-${sub.id}-002`, name: 'EnableDiagnostics', category: 'OperationalExcellence', impact: 'High', impactedField: 'Microsoft.Insights/components', impactedValue: isHealthcare ? 'ai-hc-prod-telemetry' : 'ai-univ-prod-telemetry', resourceId: `/subscriptions/${sub.subscription_id}`, shortDescription: 'Enable diagnostic settings for all resources', potentialBenefits: 'Improved observability and faster incident response', lastUpdated: new Date().toISOString() },
-      ...(isHealthcare ? [{ id: 'adv-hc-003', name: 'EnablePrivateEndpoints', category: 'Security', impact: 'High', impactedField: 'Microsoft.KeyVault/vaults', impactedValue: 'kv-hc-prod-secrets', resourceId: `/subscriptions/${sub.subscription_id}`, shortDescription: 'Use Private Endpoints to secure Key Vault access', potentialBenefits: 'Eliminates public network exposure for PHI secrets', lastUpdated: new Date().toISOString() }] : []),
-      ...(isUniversity ? [{ id: 'adv-univ-003', name: 'EnableVersioning', category: 'Reliability', impact: 'Medium', impactedField: 'Microsoft.Storage/storageAccounts', impactedValue: 'saunivrecords', resourceId: `/subscriptions/${sub.subscription_id}`, shortDescription: 'Enable blob versioning for student records', potentialBenefits: 'Protects against accidental deletion of academic records', lastUpdated: new Date().toISOString() }] : []),
-    ];
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
   const token = await getAccessToken(
     clients.credential,
@@ -73,24 +61,11 @@ async function getAdvisorRecommendations(tenantId, subscriptionId) {
 /**
  * Get Advisor score for all categories.
  */
-async function getAdvisorScore(tenantId, subscriptionId) {
+async function getAdvisorScore(tenantId, subscriptionId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const scoreMap = { 'sub-healthcare-prod': 87, 'sub-university-prod': 74, 'sub-corporate-it': 70, 'sub-dev-test': 55 };
-    const overall = scoreMap[sub.id] || 75;
-    return [{ id: `advisor-score-${sub.id}`, name: 'overallScore', score: overall, categoryScores: [
-      { name: 'Cost', score: overall - 5 },
-      { name: 'Security', score: overall + 2 },
-      { name: 'Reliability', score: overall - 2 },
-      { name: 'OperationalExcellence', score: overall - 8 },
-      { name: 'Performance', score: overall + 4 },
-    ]}];
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
   try {
     const token = await getAccessToken(

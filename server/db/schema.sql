@@ -12,15 +12,82 @@ CREATE TABLE IF NOT EXISTS tenants (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 1.5. Roles and Permissions
+CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS permissions (
+    id TEXT PRIMARY KEY,
+    role_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    allowed INTEGER DEFAULT 1,
+    FOREIGN KEY(role_id) REFERENCES roles(id) ON DELETE CASCADE,
+    UNIQUE(role_id, action)
+);
+
 -- 2. Users Table
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     display_name TEXT,
-    role TEXT CHECK(role IN ('OWNER', 'ADMIN', 'OPERATOR', 'VIEWER', 'AUDITOR')) NOT NULL DEFAULT 'VIEWER',
+    role TEXT CHECK(role IN ('SuperAdmin', 'Admin', 'Operator', 'Reader')) NOT NULL DEFAULT 'Reader',
     tenant_id TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'Microsoft',
+    last_login DATETIME,
+    status TEXT CHECK(status IN ('Approved', 'Pending Approval', 'Disabled')) NOT NULL DEFAULT 'Pending Approval',
+    password_hash TEXT,
+    mfa_enabled INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+-- Approved Users System
+CREATE TABLE IF NOT EXISTS approved_users (
+    email TEXT PRIMARY KEY,
+    provider TEXT,
+    role TEXT CHECK(role IN ('SuperAdmin', 'Admin', 'Operator', 'Reader')) NOT NULL DEFAULT 'Reader',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    added_by TEXT
+);
+
+-- Login History tracking
+CREATE TABLE IF NOT EXISTS login_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    email TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL, -- 'Success', 'Failed'
+    reason TEXT,
+    mfa_status TEXT, -- 'Verified', 'Skipped', 'Failed'
+    location_flagged INTEGER DEFAULT 0
+);
+
+-- Active Sessions tracking
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
+    revoked INTEGER DEFAULT 0,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Failed Logins tracking for Security Dashboard
+CREATE TABLE IF NOT EXISTS failed_logins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    ip_address TEXT,
+    attempt_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    reason TEXT
 );
 
 -- 3. Azure Subscriptions Table

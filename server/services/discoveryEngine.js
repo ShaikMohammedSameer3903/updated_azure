@@ -13,7 +13,7 @@ let schedulerInterval = null;
 function startDiscoveryScheduler() {
   if (schedulerInterval) return;
 
-  console.log('[DISCOVERY] Background discovery scanner started (45s interval).');
+  console.log('[DISCOVERY] Background discovery scanner started (60s interval).');
   schedulerInterval = setInterval(async () => {
     try {
       const db = await getDatabase();
@@ -33,7 +33,7 @@ function startDiscoveryScheduler() {
     } catch (err) {
       console.error('[DISCOVERY ERROR] Background scheduler failed:', err);
     }
-  }, 45000);
+  }, 60000);
 }
 
 /**
@@ -52,7 +52,7 @@ function triggerImmediateScan(tenantId, subscriptionId) {
 /**
  * Discover and cache all resources under a specific subscription.
  */
-async function discoverAllResources(tenantId, subscriptionId) {
+async function discoverAllResources(tenantId, subscriptionId, userAccessToken = null) {
   const db = await getDatabase();
   const sub = await db.get(
     'SELECT * FROM azure_subscriptions WHERE tenant_id = ? AND (id = ? OR subscription_id = ?)',
@@ -60,7 +60,7 @@ async function discoverAllResources(tenantId, subscriptionId) {
   );
   if (!sub) throw new Error(`Subscription ${subscriptionId} not found`);
 
-  const clients = await getAzureClients(tenantId, sub.id);
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const resourceClient = clients.resourceClient;
   const discoveredList = [];
 
@@ -291,7 +291,7 @@ async function discoverResourcesByGroup(tenantId, subscriptionId, resourceGroup)
 /**
  * List all Resource Groups for a subscription with resource counts.
  */
-async function listResourceGroupsWithCounts(tenantId, subscriptionId) {
+async function listResourceGroupsWithCounts(tenantId, subscriptionId, userAccessToken = null) {
   const db = await getDatabase();
   const sub = await db.get(
     'SELECT * FROM azure_subscriptions WHERE tenant_id = ? AND (id = ? OR subscription_id = ?)',
@@ -301,7 +301,7 @@ async function listResourceGroupsWithCounts(tenantId, subscriptionId) {
 
   const groups = [];
   try {
-    const clients = await getAzureClients(tenantId, sub.id);
+    const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
     const resourceClient = clients.resourceClient;
 
     const pager = resourceClient.resourceGroups.list();

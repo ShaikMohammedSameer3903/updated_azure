@@ -269,6 +269,21 @@ export default function Dashboard() {
 
   const [showComparison, setShowComparison] = useState(false);
 
+  if (!loading && subscriptions.length === 0) {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: '80px 24px', height: '60vh', textAlign: 'center'
+      }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
+        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, color: 'white' }}>No Azure Subscriptions Available</h2>
+        <p style={{ color: 'var(--text-secondary)', maxWidth: 450, lineHeight: 1.5, marginBottom: 24 }}>
+          No Azure subscriptions available for this account.
+        </p>
+      </div>
+    );
+  }
+
   if (loading && resources.length === 0) {
     return (
       <div>

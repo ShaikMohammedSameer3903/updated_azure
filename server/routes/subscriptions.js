@@ -90,6 +90,7 @@ router.post('/', authorizeRoles('OWNER', 'ADMIN'), async (req, res) => {
 // 3. POST /api/subscriptions/:id/sync - Trigger manual discovery sync
 router.post('/:id/sync', async (req, res) => {
   const { id } = req.params;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
 
   try {
     const db = await getDatabase();
@@ -108,7 +109,7 @@ router.post('/:id/sync', async (req, res) => {
     await db.run('UPDATE azure_subscriptions SET status = "Syncing" WHERE id = ?', [id]);
 
     // Run discovery
-    const discovered = await discoverAllResources(req.tenantId, id);
+    const discovered = await discoverAllResources(req.tenantId, id, userAccessToken);
 
     // Revert status to Active
     await db.run('UPDATE azure_subscriptions SET status = "Active" WHERE id = ?', [id]);
@@ -125,6 +126,59 @@ router.post('/:id/sync', async (req, res) => {
     
     console.error(`[ROUTES] Sync failed for subscription ${id}:`, error);
     res.status(500).json({ error: `Discovery sync failed: ${error.message}` });
+  }
+});
+
+// 3.5 PUT /api/subscriptions/:id - Update subscription configuration (Requires OWNER or ADMIN)
+router.put('/:id', authorizeRoles('OWNER', 'ADMIN'), async (req, res) => {
+  const { id } = req.params;
+  const { name, clientId, clientSecret, azureTenantId, authType } = req.body;
+
+  try {
+    const db = await getDatabase();
+
+    const sub = await db.get(
+      'SELECT * FROM azure_subscriptions WHERE tenant_id = ? AND id = ?',
+      [req.tenantId, id]
+    );
+
+    if (!sub) {
+      return res.status(404).json({ error: 'Subscription not found or access denied.' });
+    }
+
+    const updatedName = name !== undefined ? name : sub.name;
+    const updatedClientId = clientId !== undefined ? clientId : sub.client_id;
+    const updatedClientSecret = clientSecret !== undefined ? clientSecret : sub.client_secret;
+    const updatedAzureTenantId = azureTenantId !== undefined ? azureTenantId : sub.azure_tenant_id;
+    const updatedAuthType = authType !== undefined ? authType : sub.auth_type;
+
+    await db.run(`
+      UPDATE azure_subscriptions 
+      SET name = ?, client_id = ?, client_secret = ?, azure_tenant_id = ?, auth_type = ?
+      WHERE id = ?
+    `, [updatedName, updatedClientId, updatedClientSecret, updatedAzureTenantId, updatedAuthType, id]);
+
+    clearClientCache(req.tenantId, id);
+
+    await db.run(`
+      INSERT INTO audit_logs (tenant_id, user_id, user_email, action, resource_type, resource_id, details)
+      VALUES (?, ?, ?, 'UPDATE_SUBSCRIPTION', 'AzureSubscription', ?, ?)
+    `, [req.tenantId, req.userId, req.userEmail, id, JSON.stringify({ name: updatedName, authType: updatedAuthType })]);
+
+    res.json({
+      success: true,
+      message: 'Subscription updated successfully.',
+      subscription: {
+        id,
+        name: updatedName,
+        auth_type: updatedAuthType,
+        client_id: updatedClientId,
+        azure_tenant_id: updatedAzureTenantId
+      }
+    });
+  } catch (error) {
+    console.error('[ROUTES] PUT /subscriptions failed:', error);
+    res.status(500).json({ error: 'Failed to update subscription.' });
   }
 });
 

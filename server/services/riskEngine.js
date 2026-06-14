@@ -24,58 +24,16 @@ async function getAccessToken(credential, scope) {
  * Calculate a comprehensive risk score from live Azure data.
  * Returns score 0-100 (lower = less risk) + detailed findings.
  */
-async function calculateRiskScore(tenantId, subscriptionId, resourceGroupFilter = null) {
+async function calculateRiskScore(tenantId, subscriptionId, resourceGroupFilter = null, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  // ── Demo mode: return pre-computed risk assessment ─────────
-  if (clients.isDemo) {
-    const isHealthcare = sub.id === 'sub-healthcare-prod';
-    const isUniversity = sub.id === 'sub-university-prod';
-    const riskScore = isHealthcare ? 12 : isUniversity ? 24 : 35;
-    const findings = [];
-
-    if (isHealthcare) {
-      findings.push(
-        { category: 'Key Vault Governance', severity: 'Medium', resourceId: 'kv-hc-prod-secrets', resourceName: 'kv-hc-prod-secrets', finding: 'Customer-managed key rotation not automated', recommendation: 'Enable automatic key rotation via Azure Key Vault policy', riskPoints: 5 },
-        { category: 'Backup Coverage', severity: 'Low', resourceId: 'rsv-hc-prod-backup', resourceName: 'rsv-hc-prod-backup', finding: 'Cross-region replication not configured', recommendation: 'Enable geo-redundant backup for disaster recovery', riskPoints: 7 }
-      );
-    } else if (isUniversity) {
-      findings.push(
-        { category: 'Storage Security', severity: 'Medium', resourceId: 'saunivrecords', resourceName: 'saunivrecords', finding: 'Blob versioning not enabled on student records', recommendation: 'Enable blob versioning to protect against accidental deletion', riskPoints: 8 },
-        { category: 'Identity & Access', severity: 'High', resourceId: 'kv-univ-prod-secrets', resourceName: 'kv-univ-prod-secrets', finding: 'Key Vault uses standard SKU (no HSM)', recommendation: 'Upgrade to Premium SKU for HSM-backed keys', riskPoints: 10 },
-        { category: 'Network Security', severity: 'Medium', resourceId: 'app-univ-student-portal', resourceName: 'app-univ-student-portal', finding: 'No private endpoint configured for App Service', recommendation: 'Add private endpoint and restrict public network access', riskPoints: 6 }
-      );
-    } else {
-      findings.push(
-        { category: 'Network Security', severity: 'Critical', resourceId: 'vm-corp-ad-01', resourceName: 'vm-corp-ad-01', finding: 'RDP port 3389 open to internet', recommendation: 'Restrict RDP access to specific IP ranges or use Azure Bastion', riskPoints: 20 },
-        { category: 'Backup Coverage', severity: 'High', resourceId: 'vm-corp-vpn-gateway', resourceName: 'vm-corp-vpn-gateway', finding: 'VM has no backup configured and is stopped', recommendation: 'Configure Azure Backup or deallocate to save costs', riskPoints: 10 }
-      );
-    }
-
-    return {
-      riskScore,
-      safetyScore: 100 - riskScore,
-      findingsCount: findings.length,
-      findings,
-      breakdown: {
-        critical: findings.filter(f => f.severity === 'Critical').length,
-        high: findings.filter(f => f.severity === 'High').length,
-        medium: findings.filter(f => f.severity === 'Medium').length,
-        low: findings.filter(f => f.severity === 'Low').length,
-      },
-      calculatedAt: new Date().toISOString()
-    };
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
   const token = await getAccessToken(clients.credential, 'https://management.azure.com/.default');
 
   const findings = [];
   let totalRiskPoints = 0;
-  const maxPoints = 100;
 
   // ── 1. Check for public Storage Account blob containers (weight: 20) ──
   try {

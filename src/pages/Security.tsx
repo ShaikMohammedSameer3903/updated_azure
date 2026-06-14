@@ -1,14 +1,22 @@
 // ============================================================
-// Security Center — Defender + Risk + Sentinel
+// Security Center — Defender + Risk + Sentinel + User Security Stats
 // ============================================================
 
 import { useEffect, useState } from 'react';
 import {
   Shield, AlertTriangle, CheckCircle, XCircle,
-  RefreshCw, Lock, AlertCircle,
+  RefreshCw, Lock, AlertCircle, Users, Key, MonitorPlay
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../services/api';
+
+interface SecurityStats {
+  totalUsers: number;
+  activeUsers: number;
+  failedLogins: number;
+  lockedAccounts: number;
+  sessionCount: number;
+}
 
 function GaugeMeter({ value, color, size = 110 }: { value: number | null; color: string; size?: number }) {
   if (value == null) return <div style={{ width: size, height: size, borderRadius: '50%', background: 'var(--bg-surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>N/A</div>;
@@ -42,17 +50,19 @@ export default function Security() {
   } = useAppStore();
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'recommendations' | 'alerts' | 'risk'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'recommendations' | 'alerts' | 'risk' | 'users'>('overview');
+  const [userSecurityStats, setUserSecurityStats] = useState<SecurityStats | null>(null);
 
   const fetchData = async () => {
     if (!activeSubscriptionId) return;
     setLoading(true);
     const q = { params: { subscriptionId: activeSubscriptionId } };
     try {
-      const [defRes, riskRes, advisorRes] = await Promise.allSettled([
+      const [defRes, riskRes, advisorRes, statsRes] = await Promise.allSettled([
         api.get<any>('/api/monitoring/defender', q),
         api.get<any>('/api/monitoring/risk', q),
         api.get<any>('/api/monitoring/advisor', q),
+        api.get<SecurityStats>('/api/auth/security-stats')
       ]);
       if (defRes.status === 'fulfilled') {
         setDefenderStatus(defRes.value);
@@ -61,6 +71,9 @@ export default function Security() {
       if (riskRes.status === 'fulfilled') setRiskScore(riskRes.value);
       if (advisorRes.status === 'fulfilled') {
         setAdvisorRecommendations(advisorRes.value?.recommendations || []);
+      }
+      if (statsRes.status === 'fulfilled') {
+        setUserSecurityStats(statsRes.value);
       }
     } finally {
       setLoading(false);
@@ -85,67 +98,103 @@ export default function Security() {
   ];
 
   return (
-    <div>
+    <div style={{ fontFamily: 'var(--font-sans, system-ui, sans-serif)', color: 'white', padding: 24 }}>
       {/* Header */}
-      <div className="page-header">
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div className="page-header-content">
-          <h1 className="page-title">Security Center</h1>
-          <p className="page-subtitle">
-            Microsoft Defender for Cloud · Azure Advisor Security · Risk Engine
+          <h1 className="page-title" style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Security Center</h1>
+          <p className="page-subtitle" style={{ color: '#a0aec0', marginTop: 4 }}>
+            Microsoft Defender for Cloud · User Access Controls · Risk Policy Compliance
           </p>
         </div>
         <div className="page-actions">
-          <button className="btn btn-secondary btn-sm" onClick={fetchData} disabled={loading}>
+          <button className="btn btn-secondary btn-sm" onClick={fetchData} disabled={loading} style={{ background: '#1d2038', border: '1px solid rgba(255,255,255,0.1)', color: 'white', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
         </div>
       </div>
 
+      {/* Enterprise Security Metrics Dashboard Bar */}
+      {userSecurityStats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 24 }}>
+          <div style={{ background: '#16192b', padding: 20, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#a0aec0', fontSize: 12, fontWeight: 600 }}>
+              <Users size={16} color="#0078d4" /> TOTAL USERS
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, marginTop: 8 }}>{userSecurityStats.totalUsers}</div>
+          </div>
+          <div style={{ background: '#16192b', padding: 20, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#a0aec0', fontSize: 12, fontWeight: 600 }}>
+              <MonitorPlay size={16} color="#107C10" /> ACTIVE USERS (24H)
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, marginTop: 8 }}>{userSecurityStats.activeUsers}</div>
+          </div>
+          <div style={{ background: '#16192b', padding: 20, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#a0aec0', fontSize: 12, fontWeight: 600 }}>
+              <Lock size={16} color="#FFB900" /> ACTIVE SESSIONS
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, marginTop: 8 }}>{userSecurityStats.sessionCount}</div>
+          </div>
+          <div style={{ background: '#16192b', padding: 20, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#a0aec0', fontSize: 12, fontWeight: 600 }}>
+              <AlertTriangle size={16} color="#D13438" /> FAILED LOGINS
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, marginTop: 8, color: userSecurityStats.failedLogins > 0 ? '#D13438' : 'white' }}>{userSecurityStats.failedLogins}</div>
+          </div>
+          <div style={{ background: '#16192b', padding: 20, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#a0aec0', fontSize: 12, fontWeight: 600 }}>
+              <Key size={16} color="#D13438" /> LOCKED ACCOUNTS
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, marginTop: 8, color: userSecurityStats.lockedAccounts > 0 ? '#D13438' : 'white' }}>{userSecurityStats.lockedAccounts}</div>
+          </div>
+        </div>
+      )}
+
       {/* Score Cards */}
-      <div className="grid-3 mb-6">
-        <div className="card p-5">
+      <div className="grid-3 mb-6" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, marginBottom: 24 }}>
+        <div className="card p-5" style={{ background: '#16192b', padding: 20, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
             {loading
               ? <div className="skeleton skeleton-circle" style={{ width: 110, height: 110 }} />
               : <GaugeMeter value={secPct} color={secColor} />
             }
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#a0aec0', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
                 Defender Secure Score
               </div>
               <div style={{ fontSize: 28, fontWeight: 800, color: secColor, letterSpacing: '-0.02em' }}>
                 {secPct != null ? `${Math.round(secPct)}%` : '—'}
               </div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 4 }}>
+              <div style={{ fontSize: 12.5, color: '#a0aec0', marginTop: 4 }}>
                 {secPct == null ? 'Not configured' : secPct >= 80 ? '✓ Good security posture' : secPct >= 60 ? '⚠ Needs attention' : '✗ Critical — act now'}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="card p-5">
+        <div className="card p-5" style={{ background: '#16192b', padding: 20, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
             {loading
               ? <div className="skeleton skeleton-circle" style={{ width: 110, height: 110 }} />
               : <GaugeMeter value={riskSafe} color={riskColor} />
             }
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#a0aec0', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
                 Risk Safety Score
               </div>
               <div style={{ fontSize: 28, fontWeight: 800, color: riskColor, letterSpacing: '-0.02em' }}>
                 {riskSafe != null ? `${Math.round(riskSafe)}%` : '—'}
               </div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 4 }}>
+              <div style={{ fontSize: 12.5, color: '#a0aec0', marginTop: 4 }}>
                 {riskScore ? `${riskScore.findingsCount} active findings` : 'Calculating…'}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="card p-5" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        <div className="card p-5" style={{ background: '#16192b', padding: 20, borderRadius: 12, border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#a0aec0', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
             Threat Summary
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -159,8 +208,8 @@ export default function Security() {
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: `${item.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <item.icon size={15} color={item.color} />
                 </div>
-                <span style={{ flex: 1, fontSize: 13, color: 'var(--text-secondary)' }}>{item.label}</span>
-                <span style={{ fontSize: 18, fontWeight: 800, color: item.val > 0 ? item.color : 'var(--success-600)' }}>
+                <span style={{ flex: 1, fontSize: 13, color: '#a0aec0' }}>{item.label}</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: item.val > 0 ? item.color : '#107C10' }}>
                   {loading ? '…' : item.val}
                 </span>
               </div>
@@ -170,7 +219,7 @@ export default function Security() {
       </div>
 
       {/* Tabs */}
-      <div className="tabs">
+      <div className="tabs" style={{ display: 'flex', gap: 12, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 12, marginBottom: 24 }}>
         {[
           { id: 'overview', label: 'Overview' },
           { id: 'recommendations', label: 'Recommendations', count: allRecs.length },
@@ -179,179 +228,100 @@ export default function Security() {
         ].map(tab => (
           <button
             key={tab.id}
-            className={`tab-btn${activeTab === tab.id ? ' active' : ''}`}
             onClick={() => setActiveTab(tab.id as any)}
+            style={{
+              background: activeTab === tab.id ? 'var(--accent-color, #0078d4)' : 'transparent',
+              border: 'none', color: 'white', padding: '10px 16px', borderRadius: 8, cursor: 'pointer', fontWeight: 600
+            }}
           >
-            {tab.label}
-            {tab.count !== undefined && <span className="tab-badge">{loading ? '…' : tab.count}</span>}
+            {tab.label} {tab.count !== undefined && `(${tab.count})`}
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
-        <div>
-          {loading ? (
-            <div className="grid-2">
-              {[1,2,3,4].map(i => <div key={i} className="skeleton" style={{ height: 80, borderRadius: 16 }} />)}
-            </div>
-          ) : (
-            <>
-              {secPct != null && (securityScore?.categories || []).length > 0 && (
-                <div className="card mb-5">
-                  <div className="card-header">
-                    <div className="card-title"><Shield size={16} color="var(--azure-600)" /> Security Categories</div>
-                  </div>
-                  <div className="card-body">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      {(securityScore?.categories || []).map(cat => {
-                        const pct = cat.maxScore > 0 ? (cat.score / cat.maxScore) * 100 : 0;
-                        return (
-                          <div key={cat.name}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{cat.name}</span>
-                              <span style={{ fontSize: 13.5, color: 'var(--text-secondary)' }}>{cat.score}/{cat.maxScore}</span>
-                            </div>
-                            <div className="progress-bar" style={{ height: 8 }}>
-                              <div
-                                className="progress-fill"
-                                style={{
-                                  width: `${pct}%`,
-                                  background: pct >= 80 ? '#107C10' : pct >= 60 ? '#FFB900' : '#D13438',
-                                }}
-                              />
-                            </div>
-                            {cat.recommendations > 0 && (
-                              <div style={{ fontSize: 11.5, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                                {cat.recommendations} recommendation{cat.recommendations > 1 ? 's' : ''}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+        <div style={{ background: '#16192b', borderRadius: 12, padding: 24, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: 8 }}><Shield size={18} /> Compliance & Policy Categories</h3>
+          {secPct != null && securityScore?.categories && (securityScore?.categories || []).length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {(securityScore.categories || []).map(cat => {
+                const pct = cat.maxScore > 0 ? (cat.score / cat.maxScore) * 100 : 0;
+                return (
+                  <div key={cat.name}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 600 }}>{cat.name}</span>
+                      <span style={{ fontSize: 13.5, color: '#a0aec0' }}>{cat.score}/{cat.maxScore}</span>
+                    </div>
+                    <div style={{ height: 8, background: '#1d2038', borderRadius: 4, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: '100%',
+                          background: pct >= 80 ? '#107C10' : pct >= 60 ? '#FFB900' : '#D13438',
+                        }}
+                      />
                     </div>
                   </div>
-                </div>
-              )}
-              {!securityScore && (
-                <div className="empty-state">
-                  <div className="empty-state-icon"><Shield size={28} /></div>
-                  <div className="empty-state-title">Defender for Cloud data unavailable</div>
-                  <div className="empty-state-desc">
-                    Ensure Microsoft Defender for Cloud is enabled and your service principal has SecurityReader permissions.
-                  </div>
-                </div>
-              )}
-            </>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ color: '#a0aec0', fontSize: 14 }}>Defender configuration detail mapping not loaded. Refresh to initialize.</div>
           )}
         </div>
       )}
 
       {activeTab === 'recommendations' && (
-        <div className="card">
-          <div className="card-body" style={{ paddingTop: 8 }}>
-            {loading ? (
-              [...Array(5)].map((_, i) => <div key={i} className="skeleton skeleton-row mb-2" style={{ borderRadius: 10 }} />)
-            ) : allRecs.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-state-icon"><CheckCircle size={28} color="var(--success-600)" /></div>
-                <div className="empty-state-title">No security recommendations</div>
-                <div className="empty-state-desc">Your Azure environment has no outstanding security recommendations.</div>
+        <div style={{ background: '#16192b', borderRadius: 12, padding: 24, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 16px 0' }}>Security Recommendations</h3>
+          {allRecs.map((rec: any, idx: number) => (
+            <div key={idx} style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: 14 }}>{rec.title || rec.displayName}</h4>
+                <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#a0aec0' }}>{rec.description}</p>
               </div>
-            ) : (
-              <div className="insight-list">
-                {allRecs.map((rec: any, i: number) => {
-                  const impactColor: Record<string, string> = { High: '#D13438', Medium: '#FFB900', Low: '#0078d4' };
-                  const color = impactColor[rec.impact] || '#0078d4';
-                  return (
-                    <div key={rec.id || i} className="insight-item">
-                      <div className="insight-icon" style={{ background: `${color}18` }}>
-                        <Shield size={16} color={color} />
-                      </div>
-                      <div className="insight-content">
-                        <div className="insight-title">{rec.title || rec.displayName}</div>
-                        <div className="insight-desc">{rec.description}</div>
-                        {rec.resourceId && <div className="insight-meta">{rec.resourceId.split('/').pop()}</div>}
-                      </div>
-                      <span className={`severity-badge ${(rec.impact || 'low').toLowerCase()}`}>{rec.impact}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+              <span style={{
+                background: rec.impact === 'High' ? 'rgba(209,52,56,0.2)' : 'rgba(255,185,0,0.2)',
+                color: rec.impact === 'High' ? '#D13438' : '#FFB900',
+                padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600
+              }}>{rec.impact}</span>
+            </div>
+          ))}
         </div>
       )}
 
       {activeTab === 'alerts' && (
-        <div className="card">
-          <div className="card-body" style={{ paddingTop: 8 }}>
-            {loading ? (
-              [...Array(4)].map((_, i) => <div key={i} className="skeleton skeleton-row mb-2" style={{ borderRadius: 10 }} />)
-            ) : alerts.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-state-icon"><CheckCircle size={28} color="var(--success-600)" /></div>
-                <div className="empty-state-title">No active security alerts</div>
-                <div className="empty-state-desc">No active threat alerts detected in this subscription.</div>
+        <div style={{ background: '#16192b', borderRadius: 12, padding: 24, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 16px 0' }}>Defender Alerts</h3>
+          {alerts.length === 0 ? (
+            <p style={{ color: '#a0aec0' }}>No threats detected.</p>
+          ) : (
+            alerts.map((al: any, idx: number) => (
+              <div key={idx} style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <h4 style={{ margin: 0, fontSize: 14 }}>{al.name || al.displayName}</h4>
+                <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#a0aec0' }}>{al.description}</p>
               </div>
-            ) : (
-              <div className="insight-list">
-                {alerts.map((alert: any, i: number) => {
-                  const sevColor: Record<string, string> = { Critical: '#D13438', High: '#c05500', Medium: '#b45309', Low: '#0078d4', Informational: '#64748b' };
-                  const color = sevColor[alert.severity] || '#64748b';
-                  return (
-                    <div key={alert.id || i} className="insight-item">
-                      <div className="insight-icon" style={{ background: `${color}18` }}>
-                        <AlertTriangle size={16} color={color} />
-                      </div>
-                      <div className="insight-content">
-                        <div className="insight-title">{alert.name || alert.displayName}</div>
-                        <div className="insight-desc">{alert.description}</div>
-                        <div className="insight-meta">{alert.firedAt ? new Date(alert.firedAt).toLocaleString() : ''}</div>
-                      </div>
-                      <span className={`severity-badge ${(alert.severity || 'low').toLowerCase()}`}>{alert.severity}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+            ))
+          )}
         </div>
       )}
 
       {activeTab === 'risk' && (
-        <div className="card">
-          <div className="card-body" style={{ paddingTop: 8 }}>
-            {loading ? (
-              [...Array(5)].map((_, i) => <div key={i} className="skeleton skeleton-row mb-2" style={{ borderRadius: 10 }} />)
-            ) : findings.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-state-icon"><CheckCircle size={28} color="var(--success-600)" /></div>
-                <div className="empty-state-title">No risk findings</div>
-                <div className="empty-state-desc">Your Azure environment passed all automated risk checks.</div>
+        <div style={{ background: '#16192b', borderRadius: 12, padding: 24, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 16px 0' }}>Calculated Risks</h3>
+          {findings.map((f: any, idx: number) => (
+            <div key={idx} style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: 14 }}>{f.finding}</h4>
+                <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#a0aec0' }}>{f.recommendation}</p>
               </div>
-            ) : (
-              <div className="insight-list">
-                {findings.map((f: any, i: number) => {
-                  const sevColor: Record<string, string> = { Critical: '#D13438', High: '#c05500', Medium: '#b45309', Low: '#0078d4' };
-                  const color = sevColor[f.severity] || '#0078d4';
-                  return (
-                    <div key={i} className="insight-item">
-                      <div className="insight-icon" style={{ background: `${color}18` }}>
-                        <Lock size={15} color={color} />
-                      </div>
-                      <div className="insight-content">
-                        <div className="insight-title">{f.finding}</div>
-                        <div className="insight-desc">{f.recommendation}</div>
-                        <div className="insight-meta">{f.resourceName} · {f.category}</div>
-                      </div>
-                      <span className={`severity-badge ${f.severity.toLowerCase()}`}>{f.severity}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+              <span style={{
+                color: f.severity === 'Critical' ? '#D13438' : '#FFB900',
+                fontWeight: 600, fontSize: 12
+              }}>{f.severity}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

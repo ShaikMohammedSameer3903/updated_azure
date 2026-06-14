@@ -11,22 +11,9 @@ function adminOnly(req, res, next) {
   const email = req.userEmail || req.user.upn || req.user.email || '';
   const tenantId = req.tenantId || req.user.tid || req.user.tenantId || '';
 
-  const isLocalAdmin = (
-    email.toLowerCase() === 'admin@cloudops-local.com' &&
-    tenantId === 'demo-org-001'
-  );
+  const hasAdminRole = role === 'SuperAdmin' || role === 'Admin' || role === 'Super Admin' || role === 'Administrator' || role === 'OWNER' || role === 'ADMIN';
 
-  const isApprovedProdAdmin = (
-    process.env.AZURE_MODE === 'production' &&
-    process.env.APPROVED_ADMIN_EMAIL &&
-    email.toLowerCase() === process.env.APPROVED_ADMIN_EMAIL.toLowerCase() &&
-    process.env.APPROVED_TENANT_ID &&
-    tenantId === process.env.APPROVED_TENANT_ID
-  );
-
-  const hasAdminRole = role.toUpperCase() === 'OWNER' || role.toUpperCase() === 'ADMIN';
-
-  if ((isLocalAdmin || isApprovedProdAdmin) && hasAdminRole) {
+  if (hasAdminRole) {
     return next();
   }
 

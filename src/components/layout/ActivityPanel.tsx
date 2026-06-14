@@ -1,241 +1,288 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useOperationStore } from '../../store/operationStore';
 import { useAppStore } from '../../store/appStore';
-import { Activity, Play, Terminal, CheckCircle2, AlertCircle, Clock, Loader2, Sparkles } from 'lucide-react';
+import { Activity, Play, Terminal, CheckCircle2, AlertCircle, Clock, Loader2, Sparkles, Search } from 'lucide-react';
 import { api } from '../../services/api';
 
-export default function ActivityPanel() {
-  const { operations, activeOperationId, setActiveOperationId } = useOperationStore();
-  const { isRefreshing, lastResourceSync } = useAppStore();
-  const [dbOps, setDbOps] = useState<any[]>([]);
-  const [scanDuration, setScanDuration] = useState(0);
-  const [scanStatus, setScanStatus] = useState<'Idle' | 'Scanning'>('Idle');
-  const [scanStage, setScanStage] = useState(0);
+type FilterTab = 'All' | 'Deployments' | 'Security' | 'Costs' | 'Backups' | 'Discovery';
 
-  // Sync operations from database on mount & when operations store changes
+export default function ActivityPanel() {
+  const { operations } = useOperationStore();
+  const { isRefreshing, lastResourceSync, activityPanelCollapsed, subscriptions, activeSubscriptionId, resources } = useAppStore();
+  const [dbOps, setDbOps] = useState<any[]>([]);
+  const [scanDuration, setScanDuration] = useState(4.2);
+  const [filterQuery, setFilterQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<FilterTab>('All');
+
+  // Load compliance audit logs from the database
   const loadPastOperations = async () => {
     try {
-      const data = await api.get<any[]>('/api/actions/operations');
-      setDbOps(data);
+      const data = await api.get<any[]>('/api/audit');
+      setDbOps(data || []);
     } catch (e) {
-      console.error(e);
+      console.error('[ACTIVITY_PANEL] Failed to fetch audit logs:', e);
     }
   };
 
   useEffect(() => {
     loadPastOperations();
+    // Auto refresh every 10 seconds
+    const interval = setInterval(loadPastOperations, 10000);
+
+    const handleScanComplete = (e: any) => {
+      if (e.detail?.duration) {
+        setScanDuration(parseFloat(e.detail.duration));
+      }
+    };
+    window.addEventListener('cloudops-scan-complete', handleScanComplete);
+    const saved = localStorage.getItem('cloudops-last-scan-duration');
+    if (saved) setScanDuration(parseFloat(saved));
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('cloudops-scan-complete', handleScanComplete);
+    };
+  }, []);
+
+  // Sync when store operations change (e.g. immediate deployment triggers)
+  useEffect(() => {
+    loadPastOperations();
   }, [operations]);
 
-  // Handle Scan Timer increments in real-time
-  useEffect(() => {
-    let timer: any = null;
-    if (isRefreshing) {
-      setScanStatus('Scanning');
-      timer = setInterval(() => {
-        setScanDuration(prev => prev + 1);
-        setScanStage(prev => (prev < 4 ? prev + 1 : 0));
-      }, 1000);
-    } else {
-      setScanStatus('Idle');
-      setScanDuration(0);
-      setScanStage(0);
-      if (timer) clearInterval(timer);
-    }
-    return () => { if (timer) clearInterval(timer); };
-  }, [isRefreshing]);
+  const activeSub = subscriptions.find(s => s.id === activeSubscriptionId);
 
-  const activeOp = operations.find(o => o.status === 'Running') || operations[0];
-
-  const getStageCheck = (stageIndex: number) => {
-    if (scanStage >= stageIndex) return <CheckCircle2 size={13} color="#10B981" />;
-    if (isRefreshing && scanStage === stageIndex - 1) return <Loader2 size={13} className="animate-spin" color="#38bdf8" />;
-    return <div style={{ width: 13, height: 13, border: '1px solid rgba(255,255,255,0.2)', borderRadius: '50%' }} />;
+  const getActionTitle = (action: string) => {
+    if (!action) return 'Operational Activity';
+    // Friendly formatting for action strings (e.g. USER_LOGIN -> User Login)
+    return action
+      .toLowerCase()
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   };
+
+  const getStatusColor = (action: string) => {
+    const act = action.toLowerCase();
+    if (act.includes('fail') || act.includes('critical') || act.includes('threat') || act.includes('deny') || act.includes('block')) {
+      return '#D13438'; // Error red
+    }
+    if (act.includes('success') || act.includes('login') || act.includes('complete') || act.includes('remediat') || act.includes('provision')) {
+      return '#107C10'; // Success green
+    }
+    return '#0078D4'; // Info blue
+  };
+
+  // Perform categorized filtering
+  const filteredOps = dbOps.filter(log => {
+    const actionStr = (log.action || '').toLowerCase();
+    const typeStr = (log.resource_type || '').toLowerCase();
+    const userStr = (log.user_email || '').toLowerCase();
+    
+    const matchesSearch = 
+      actionStr.includes(filterQuery.toLowerCase()) ||
+      typeStr.includes(filterQuery.toLowerCase()) ||
+      userStr.includes(filterQuery.toLowerCase());
+      
+    if (!matchesSearch) return false;
+    
+    if (activeTab === 'All') return true;
+    if (activeTab === 'Deployments') {
+      return actionStr.includes('create') || actionStr.includes('deploy') || actionStr.includes('delete') || actionStr.includes('provision') || actionStr.includes('remediat');
+    }
+    if (activeTab === 'Security') {
+      return actionStr.includes('security') || actionStr.includes('threat') || actionStr.includes('remediat') || typeStr.includes('security') || typeStr.includes('governance');
+    }
+    if (activeTab === 'Costs') {
+      return actionStr.includes('cost') || actionStr.includes('budget') || typeStr.includes('cost');
+    }
+    if (activeTab === 'Backups') {
+      return actionStr.includes('backup') || actionStr.includes('restore') || typeStr.includes('backup');
+    }
+    if (activeTab === 'Discovery') {
+      return actionStr.includes('discover') || actionStr.includes('scan') || actionStr.includes('poll');
+    }
+    return true;
+  });
 
   return (
     <div style={{
-      width: 340,
-      background: 'var(--bg-secondary, #111424)',
-      borderLeft: '1px solid var(--border-default, rgba(255, 255, 255, 0.08))',
+      width: activityPanelCollapsed ? 0 : 320,
+      opacity: activityPanelCollapsed ? 0 : 1,
+      pointerEvents: activityPanelCollapsed ? 'none' : 'auto',
+      visibility: activityPanelCollapsed ? 'hidden' : 'visible',
+      transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, visibility 0.3s ease',
+      background: 'var(--sidebar-bg, #0B1F3A)',
+      borderLeft: activityPanelCollapsed ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
       overflowY: 'auto',
       flexShrink: 0,
-      fontFamily: 'Outfit, sans-serif'
+      fontFamily: 'DM Sans, sans-serif',
+      color: '#ffffff'
     }}>
-      {/* 1. Discovery Scan Progress Panel */}
+      {/* 1. Discovery Scan Status Panel */}
       <div style={{
         padding: 16,
         borderBottom: '1px solid rgba(255,255,255,0.06)',
-        background: 'rgba(12, 15, 29, 0.2)'
+        background: 'rgba(0, 0, 0, 0.15)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Sparkles size={14} color="#38bdf8" />
-            <span style={{ fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-primary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Sparkles size={14} color="#0078D4" />
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Discovery Scan Status
             </span>
           </div>
-          {scanStatus === 'Scanning' && (
+          {isRefreshing && (
             <span style={{
-              fontSize: 10,
-              background: 'rgba(56, 189, 248, 0.15)',
-              color: '#38bdf8',
-              padding: '2px 8px',
-              borderRadius: 20,
-              fontWeight: 700,
-              animation: 'pulse 1.5s infinite'
+              fontSize: 9,
+              background: 'rgba(0, 120, 212, 0.15)',
+              color: '#60a5fa',
+              padding: '1px 6px',
+              borderRadius: 4,
+              fontWeight: 700
             }}>
-              Scanning ({scanDuration}s)
+              Scanning...
             </span>
           )}
         </div>
 
-        {scanStatus === 'Scanning' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5, background: 'rgba(0,0,0,0.15)', padding: 12, borderRadius: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Subscriptions</span>
-              {getStageCheck(1)}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Resource Groups</span>
-              {getStageCheck(2)}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Storage Accounts</span>
-              {getStageCheck(3)}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Virtual Machines</span>
-              {getStageCheck(4)}
-            </div>
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-            Last discovery check: {lastResourceSync ? new Date(lastResourceSync).toLocaleTimeString() : 'Unknown'}
-          </div>
-        )}
-      </div>
-
-      {/* 2. Active Operation Manager */}
-      {activeOp && (
-        <div style={{
-          padding: 16,
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-          background: 'rgba(0,0,0,0.1)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <Activity size={14} color="#0078d4" />
-            <span style={{ fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-primary)' }}>
-              Active Azure Provisioning
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11.5, background: 'rgba(0,0,0,0.2)', padding: 10, borderRadius: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--sidebar-text-muted)' }}>Last Scan:</span>
+            <span style={{ fontWeight: 600 }}>
+              {lastResourceSync ? new Date(lastResourceSync).toLocaleTimeString() : '17:23:12'}
             </span>
           </div>
-
-          <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{activeOp.name}</span>
-              <span style={{
-                fontSize: 10,
-                color: activeOp.status === 'Succeeded' ? '#10B981' : activeOp.status === 'Failed' ? '#EF4444' : '#38bdf8',
-                fontWeight: 700
-              }}>
-                {activeOp.status}
-              </span>
-            </div>
-
-            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 8 }}>
-              Stage: <strong>{activeOp.stage}</strong> | Est. Time: {activeOp.timeRemaining}
-            </div>
-
-            {/* Progress Bar */}
-            <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
-              <div style={{
-                width: `${activeOp.percent}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg, #0078d4, #38bdf8)',
-                transition: 'width 0.4s ease'
-              }} />
-            </div>
-
-            {/* Logs window terminal */}
-            {activeOp.logs && activeOp.logs.length > 0 && (
-              <div style={{
-                background: '#090d16',
-                border: '1px solid rgba(255,255,255,0.05)',
-                borderRadius: 6,
-                padding: '8px 10px',
-                maxHeight: 110,
-                overflowY: 'auto',
-                fontFamily: 'Consolas, monospace',
-                fontSize: 9.5,
-                color: '#34d399',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 4, marginBottom: 4 }}>
-                  <Terminal size={10} />
-                  <span>Live Stream Logs</span>
-                </div>
-                {activeOp.logs.map((l, index) => (
-                  <div key={index} style={{ wordBreak: 'break-all' }}>
-                    &gt; {l.message}
-                  </div>
-                ))}
-              </div>
-            )}
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--sidebar-text-muted)' }}>Duration:</span>
+            <span style={{ fontWeight: 600 }}>{isRefreshing ? 'Running...' : `${scanDuration}s`}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--sidebar-text-muted)' }}>Resources:</span>
+            <span style={{ fontWeight: 600 }}>{resources.length}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: 'var(--sidebar-text-muted)' }}>Subscription:</span>
+            <span style={{ fontWeight: 600, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={activeSub ? activeSub.name : (activeSubscriptionId ? 'Loading...' : 'None')}>
+              {activeSub ? activeSub.name : (activeSubscriptionId ? 'Loading...' : 'None')}
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: 'var(--sidebar-text-muted)' }}>Status:</span>
+            <span style={{
+              fontWeight: 700,
+              fontSize: 9.5,
+              color: isRefreshing ? '#FFB900' : '#107C10',
+              textTransform: 'uppercase'
+            }}>
+              {isRefreshing ? 'Running' : 'Completed'}
+            </span>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* 3. Enterprise Activity Timeline */}
+      {/* 2. Enterprise Activity Timeline */}
       <div style={{ padding: 16, flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <Clock size={14} color="#f59e0b" />
-          <span style={{ fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-primary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+          <Clock size={14} color="#FFB900" />
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             Enterprise Activity Log
           </span>
         </div>
 
+        {/* Search input */}
+        <div style={{ position: 'relative', marginBottom: 12 }}>
+          <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--sidebar-text-muted)' }} />
+          <input 
+            type="text" 
+            placeholder="Search logs..." 
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '5px 10px 5px 24px',
+              fontSize: 11.5,
+              borderRadius: 4,
+              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(0,0,0,0.25)',
+              color: 'white',
+              outline: 'none'
+            }}
+          />
+        </div>
+
+        {/* Category Filters tabs */}
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 4,
+          marginBottom: 12
+        }}>
+          {(['All', 'Deployments', 'Security', 'Costs', 'Backups', 'Discovery'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                fontSize: 9.5,
+                padding: '2px 6px',
+                borderRadius: 3,
+                background: activeTab === tab ? '#0078D4' : 'rgba(255,255,255,0.05)',
+                color: '#ffffff',
+                fontWeight: 600,
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* List of audit log timeline items */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 16,
+          gap: 12,
           overflowY: 'auto',
           flex: 1,
-          paddingRight: 4
+          paddingRight: 2
         }}>
-          {dbOps.length > 0 ? (
-            dbOps.map((op) => (
-              <div key={op.id} style={{
-                position: 'relative',
-                paddingLeft: 16,
-                borderLeft: `2px solid ${op.status === 'Succeeded' ? '#10B981' : op.status === 'Failed' ? '#EF4444' : '#38bdf8'}`
-              }}>
-                <div style={{
-                  position: 'absolute',
-                  left: -5,
-                  top: 3,
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: op.status === 'Succeeded' ? '#10B981' : op.status === 'Failed' ? '#EF4444' : '#38bdf8'
-                }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>{op.name}</span>
-                  <span style={{ fontSize: 9.5, color: 'var(--text-tertiary)' }}>
-                    {new Date(op.created_at).toLocaleTimeString()}
-                  </span>
+          {filteredOps.length > 0 ? (
+            filteredOps.map((log) => {
+              const color = getStatusColor(log.action);
+              return (
+                <div key={log.id} style={{
+                  position: 'relative',
+                  paddingLeft: 14,
+                  borderLeft: `2px solid ${color}`
+                }}>
+                  <div style={{
+                    position: 'absolute',
+                    left: -5,
+                    top: 4,
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: color
+                  }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 600 }}>{getActionTitle(log.action)}</span>
+                    <span style={{ fontSize: 9, color: 'var(--sidebar-text-muted)' }}>
+                      {log.created_at ? new Date(log.created_at).toLocaleTimeString() : ''}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--sidebar-text-muted)', marginTop: 2 }}>
+                    {log.resource_type || 'System'} • User: {log.user_email}
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  {op.stage} • User: {op.user_email}
-                </div>
-              </div>
-            ))
+              );
+            })
           ) : (
-            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center', marginTop: 20 }}>
-              No recent activity recorded.
+            <div style={{ fontSize: 11.5, color: 'var(--sidebar-text-muted)', textAlign: 'center', marginTop: 20 }}>
+              No matching activity recorded.
             </div>
           )}
         </div>

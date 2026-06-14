@@ -3,7 +3,7 @@
    Production-grade Microsoft Azure Portal aesthetic
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 /* ── CSS Reset & Base ───────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,7 +17,7 @@ input, select, textarea { font: inherit; }
 
 /* ── Design Tokens ──────────────────────────────────────────── */
 :root {
-  --font-sans: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'DM Sans', 'Inter', 'Segoe UI', sans-serif;
   --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
 
   /* Azure Fluent palette */
@@ -26,9 +26,9 @@ input, select, textarea { font: inherit; }
   --azure-200: #bfdbfe;
   --azure-400: #60a5fa;
   --azure-500: #3b82f6;
-  --azure-600: #0078d4;
+  --azure-600: #0078D4;
   --azure-700: #106ebe;
-  --azure-800: #005a9e;
+  --azure-800: #005A9E;
   --azure-900: #0B1F3A;
 
   --teal-400: #2dd4bf;
@@ -57,31 +57,31 @@ input, select, textarea { font: inherit; }
   --orange-500: #f97316;
 
   /* Light theme surfaces */
-  --bg-app:               #F5F9FC;
+  --bg-app:               #F8FAFC;
   --bg-surface:           #ffffff;
   --bg-surface-raised:    #ffffff;
   --bg-surface-secondary: #f1f5f9;
   --bg-surface-tertiary:  #e8eef4;
   --bg-overlay:           rgba(11, 31, 58, 0.45);
 
-  --text-primary:   #0f172a;
-  --text-secondary: #475569;
+  --text-primary:   #1F2937;
+  --text-secondary: #6B7280;
   --text-tertiary:  #94a3b8;
   --text-muted:     #b0bec5;
   --text-inverse:   #ffffff;
-  --text-link:      #0078d4;
+  --text-link:      #0078D4;
 
-  --border-subtle:  #edf2f7;
-  --border-default: #e2e8f0;
+  --border-subtle:  #E5E7EB;
+  --border-default: #E5E7EB;
   --border-strong:  #cbd5e1;
-  --border-focus:   #0078d4;
+  --border-focus:   #0078D4;
 
   /* Elevation shadows */
   --shadow-xs:  0 1px 2px rgba(0,0,0,.04);
-  --shadow-sm:  0 1px 4px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-  --shadow-md:  0 4px 8px -1px rgba(0,0,0,.08), 0 2px 4px -2px rgba(0,0,0,.06);
-  --shadow-lg:  0 10px 20px -3px rgba(0,0,0,.1), 0 4px 8px -4px rgba(0,0,0,.06);
-  --shadow-xl:  0 20px 40px -6px rgba(0,0,0,.12), 0 8px 16px -8px rgba(0,0,0,.08);
+  --shadow-sm:  0 4px 16px rgba(0,0,0,0.08);
+  --shadow-md:  0 6px 20px rgba(0,0,0,0.1);
+  --shadow-lg:  0 12px 28px rgba(0,0,0,0.12);
+  --shadow-xl:  0 20px 40px -6px rgba(0,0,0,.12);
   --shadow-glow: 0 0 0 1px rgba(0,120,212,.12), 0 4px 16px rgba(0,120,212,.16);
   --shadow-glow-strong: 0 0 0 1px rgba(0,120,212,.2), 0 8px 32px rgba(0,120,212,.24);
 
@@ -650,11 +650,15 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
-  transition: box-shadow var(--transition-base), border-color var(--transition-base);
+  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
   overflow: hidden;
 }
 
-.card:hover { box-shadow: var(--shadow-md); border-color: var(--border-default); }
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  border-color: var(--border-default);
+}
 
 .card-glass {
   background: rgba(255,255,255,.75);
@@ -2065,4 +2069,16 @@ body {
   .header-center { display: none; }
   .login-left { display: none; }
   .login-right { width: 100%; }
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 2.5fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
 }

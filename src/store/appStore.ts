@@ -208,9 +208,11 @@ interface AppState {
 
   // ── UI State ──
   sidebarCollapsed: boolean;
+  activityPanelCollapsed: boolean;
   commandPaletteOpen: boolean;
   globalSearchQuery: string;
   toggleSidebar: () => void;
+  toggleActivityPanel: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setGlobalSearchQuery: (query: string) => void;
 
@@ -321,10 +323,13 @@ export const useAppStore = create<AppState>()(
 
       // ── UI State ──
       sidebarCollapsed: false,
+      activityPanelCollapsed: false,
       commandPaletteOpen: false,
       globalSearchQuery: '',
       toggleSidebar: () =>
         set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      toggleActivityPanel: () =>
+        set((state) => ({ activityPanelCollapsed: !state.activityPanelCollapsed })),
       setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
       setGlobalSearchQuery: (globalSearchQuery) => set({ globalSearchQuery }),
 
@@ -346,6 +351,7 @@ export const useAppStore = create<AppState>()(
         activeEnvironment: state.activeEnvironment,
         globalSearchQuery: state.globalSearchQuery,
         sidebarCollapsed: state.sidebarCollapsed,
+        activityPanelCollapsed: state.activityPanelCollapsed,
         autoRefreshEnabled: state.autoRefreshEnabled,
         refreshInterval: state.refreshInterval,
       }),

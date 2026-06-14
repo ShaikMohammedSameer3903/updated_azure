@@ -23,48 +23,11 @@ async function getAccessToken(credential, scope) {
 /**
  * Get active Service Health events (outages, maintenance, advisories).
  */
-async function getServiceHealthAlerts(tenantId, subscriptionId) {
+async function getServiceHealthAlerts(tenantId, subscriptionId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const isHealthcare = sub.id === 'sub-healthcare-prod';
-    const isUniversity = sub.id === 'sub-university-prod';
-    const alerts = [];
-    if (isHealthcare) {
-      alerts.push({
-        id: 'svc-hc-001',
-        name: 'AzureSQLOutage',
-        title: 'Azure SQL Service Outage',
-        eventType: 'Outage',
-        status: 'Active',
-        level: 'Critical',
-        description: 'Partial outage affecting SQL databases in East US.',
-        impactedServices: [{ serviceName: 'AzureSQL', regions: ['East US'] }],
-        startTime: new Date(Date.now() - 600000).toISOString(),
-        lastUpdate: new Date().toISOString(),
-        trackingId: 'track-hc-001'
-      });
-    } else if (isUniversity) {
-      alerts.push({
-        id: 'svc-univ-001',
-        name: 'AzureStorageAlert',
-        title: 'Storage Latency Degradation',
-        eventType: 'Maintenance',
-        status: 'Active',
-        level: 'Warning',
-        description: 'Increased latency observed for storage accounts.',
-        impactedServices: [{ serviceName: 'AzureStorage', regions: ['West Europe'] }],
-        startTime: new Date(Date.now() - 3600000).toISOString(),
-        lastUpdate: new Date().toISOString(),
-        trackingId: 'track-univ-001'
-      });
-    }
-    return alerts;
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
   const token = await getAccessToken(
     clients.credential,
@@ -99,25 +62,11 @@ async function getServiceHealthAlerts(tenantId, subscriptionId) {
 /**
  * Get resource-level health status.
  */
-async function getResourceHealth(tenantId, subscriptionId, resourceId) {
+async function getResourceHealth(tenantId, subscriptionId, resourceId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const isHealthcare = sub.id === 'sub-healthcare-prod';
-    return {
-      resourceId,
-      availabilityState: isHealthcare ? 'Available' : 'Degraded',
-      title: isHealthcare ? 'Resource healthy' : 'Resource experiencing issues',
-      summary: isHealthcare ? 'All systems operational.' : 'Intermittent latency detected.',
-      reasonType: isHealthcare ? '' : 'PerformanceDegradation',
-      occurredAt: new Date(Date.now() - 300000).toISOString(),
-      reportedAt: new Date().toISOString()
-    };
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const token = await getAccessToken(
     clients.credential,
     'https://management.azure.com/.default'
@@ -155,42 +104,11 @@ async function getResourceHealth(tenantId, subscriptionId, resourceId) {
 /**
  * Get all planned maintenance events for a subscription.
  */
-async function getPlannedMaintenance(tenantId, subscriptionId) {
+async function getPlannedMaintenance(tenantId, subscriptionId, userAccessToken = null) {
   const sub = await getSubscription(tenantId, subscriptionId);
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const isHealthcare = sub.id === 'sub-healthcare-prod';
-    const isUniversity = sub.id === 'sub-university-prod';
-    const events = [];
-    if (isHealthcare) {
-      events.push({
-        id: 'maint-hc-001',
-        name: 'SQLMaintenance',
-        title: 'Planned Maintenance for Azure SQL',
-        status: 'Scheduled',
-        description: 'Maintenance window for patching Azure SQL databases.',
-        impactedServices: ['AzureSQL'],
-        startTime: new Date(Date.now() + 86400000).toISOString(),
-        endTime: new Date(Date.now() + 90000000).toISOString()
-      });
-    } else if (isUniversity) {
-      events.push({
-        id: 'maint-univ-001',
-        name: 'StorageMaintenance',
-        title: 'Scheduled Storage Account Maintenance',
-        status: 'Scheduled',
-        description: 'Backend hardware upgrade for storage accounts.',
-        impactedServices: ['AzureStorage'],
-        startTime: new Date(Date.now() + 43200000).toISOString(),
-        endTime: new Date(Date.now() + 54000000).toISOString()
-      });
-    }
-    return events;
-  }
-
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
   const realSubId = sub.subscription_id;
   const token = await getAccessToken(
     clients.credential,

@@ -13,9 +13,12 @@ export interface User {
   entraObjectId: string;
   avatarUrl?: string;
   lastLogin: string;
+  provider?: 'Local' | 'Microsoft' | 'Google';
+  status?: 'Approved' | 'Pending Approval' | 'Disabled';
+  mfaEnabled?: boolean;
 }
 
-export type UserRole = 'OWNER' | 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'AUDITOR';
+export type UserRole = 'Super Admin' | 'SuperAdmin' | 'Admin' | 'Administrator' | 'Operator' | 'Viewer' | 'Reader' | 'OWNER' | 'ADMIN' | 'OPERATOR' | 'VIEWER' | 'AUDITOR';
 
 export interface Organization {
   id: string;
@@ -47,6 +50,10 @@ export interface AzureSubscription {
   status?: string;
   authType?: string;
   auth_type?: string;
+  client_id?: string;
+  clientId?: string;
+  azure_tenant_id?: string;
+  azureTenantId?: string;
 }
 
 export interface AzureResource {

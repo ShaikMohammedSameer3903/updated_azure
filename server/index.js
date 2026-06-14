@@ -61,13 +61,10 @@ app.use(helmet({
   contentSecurityPolicy: false // Disable CSP for local dev compatibility if needed
 }));
 
-// CORS Configuration
+// CORS Configuration - Production Hardened
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://localhost:5173',
-  'http://localhost:3000',
-  'https://localhost:3000',
-  'https://zealous-river-08f22d600.7.azurestaticapps.net'
+  'https://localhost:5173'
 ];
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
@@ -76,8 +73,6 @@ app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    if (/^https:\/\/[a-z0-9-]+\.azurestaticapps\.net$/.test(origin)) return callback(null, true);
-    if (/^https:\/\/[a-z0-9-]+\.azurewebsites\.net$/.test(origin)) return callback(null, true);
     callback(new Error('CORS: origin not allowed - ' + origin));
   },
   credentials: true
@@ -85,82 +80,21 @@ app.use(cors({
 
 app.use(express.json());
 
+const { requestTracker, getTrafficStats } = require('./middleware/requestTracker');
+app.use(requestTracker);
+app.set('getTrafficStats', getTrafficStats);
+
 // Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
-  message: { error: 'Too many requests. Please try again later.' }
+  max: 5000, // Increased limit for enterprise dashboards
+  message: { error: 'Too many requests. Please try again later.' },
+  skip: (req) => req.originalUrl.includes('/health') || req.originalUrl.includes('/stream')
 });
 app.use('/api/', limiter);
 
 // 3. JWT Token Authentication Middleware
-const client = jwksClient({
-  jwksUri: 'https://login.microsoftonline.com/common/discovery/v2.0/keys'
-});
-
-function getKey(header, callback) {
-  client.getSigningKey(header.kid, function (err, key) {
-    if (err) {
-      callback(err);
-    } else {
-      const signingKey = key.publicKey || key.rsaPublicKey;
-      callback(null, signingKey);
-    }
-  });
-}
-
-function validateJwt(req, res, next) {
-  const authHeader = req.headers.authorization;
-  let token = null;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
-  } else if (req.query && req.query.token) {
-    token = req.query.token;
-  }
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access Denied: Missing Token' });
-  }
-
-  // First try verifying with local HS256 secret for local admin account
-  const JWT_SECRET = process.env.JWT_SECRET || 'local-secret-key-12345';
-  jwt.verify(token, JWT_SECRET, { algorithms: ['HS256', 'HS512', 'HS384'] }, (localErr, decoded) => {
-    if (!localErr) {
-      req.user = decoded;
-      req.user.roles = decoded.roles || ['OWNER'];
-      return next();
-    }
-
-    // Real Entra ID Token Verification using MSAL keys
-    jwt.verify(token, getKey, {
-      algorithms: ['RS256']
-    }, (err, decoded) => {
-      if (err) {
-        console.error('[AUTH] Token validation failed:', err.message);
-        return res.status(403).json({ error: 'Access Denied: Invalid or Expired Token' });
-      }
-
-      // Restrict Entra ID to approved administrator only
-      const approvedEmail = process.env.APPROVED_ADMIN_EMAIL;
-      const approvedTenant = process.env.APPROVED_TENANT_ID;
-
-      const email = decoded.upn || decoded.unique_name || decoded.email || '';
-      const tenant = decoded.tid || decoded.tenantId || '';
-
-      const matchesEmail = approvedEmail && email.toLowerCase() === approvedEmail.toLowerCase();
-      const matchesTenant = approvedTenant && tenant === approvedTenant;
-
-      if (!matchesEmail || !matchesTenant) {
-        console.warn(`[SECURITY] Rejected unauthorized login from Entra ID user: ${email}, tenant: ${tenant}`);
-        return res.status(403).json({ error: 'Access Denied: Account not approved.' });
-      }
-
-      req.user = decoded;
-      req.user.roles = ['OWNER']; // Hardcode administrator permissions
-      next();
-    });
-  });
-}
+const validateJwt = require('./middleware/validateJwt');
 
 // 4. Audit Log Middleware
 function auditLogger(req, res, next) {
@@ -190,10 +124,13 @@ app.get('/health', (req, res) => {
 
 app.get('/api/health/diagnose', async (req, res) => {
   let dbHealthy = false;
+  let activeSessionsCount = 0;
   try {
     const db = await getDatabase();
     await db.get('SELECT 1');
     dbHealthy = true;
+    const sessionRow = await db.get('SELECT COUNT(*) as count FROM sessions WHERE revoked = 0');
+    activeSessionsCount = sessionRow ? sessionRow.count : 0;
   } catch (err) {
     dbHealthy = false;
   }
@@ -204,8 +141,12 @@ app.get('/api/health/diagnose', async (req, res) => {
     process.env.AZURE_TENANT_ID &&
     process.env.AZURE_CLIENT_SECRET &&
     process.env.AZURE_SUBSCRIPTION_ID &&
-    process.env.AZURE_CLIENT_ID !== 'YOUR_CLIENT_ID' &&
     process.env.AZURE_CLIENT_ID !== ''
+  );
+  
+  const hasGoogleEnv = !!(
+    process.env.VITE_GOOGLE_CLIENT_ID ||
+    process.env.GOOGLE_CLIENT_ID
   );
 
   res.json({
@@ -219,12 +160,16 @@ app.get('/api/health/diagnose', async (req, res) => {
     securityScanner: hasAzureEnv ? 'Healthy' : 'Warning',
     costEngine: hasAzureEnv ? 'Healthy' : 'Warning',
     jwtSecret: jwtSecret,
+    environment: process.env.NODE_ENV || 'development',
+    sessionsCount: activeSessionsCount,
+    googleConfigured: hasGoogleEnv,
     details: {
       JWT_SECRET: jwtSecret ? 'configured' : 'missing',
-      AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID ? (process.env.AZURE_CLIENT_ID === 'YOUR_CLIENT_ID' ? 'placeholder' : 'configured') : 'missing',
+      AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID ? 'configured' : 'missing',
       AZURE_TENANT_ID: process.env.AZURE_TENANT_ID ? 'configured' : 'missing',
       AZURE_CLIENT_SECRET: process.env.AZURE_CLIENT_SECRET ? 'configured' : 'missing',
-      AZURE_SUBSCRIPTION_ID: process.env.AZURE_SUBSCRIPTION_ID ? 'configured' : 'missing'
+      AZURE_SUBSCRIPTION_ID: process.env.AZURE_SUBSCRIPTION_ID ? 'configured' : 'missing',
+      GOOGLE_CLIENT_ID: hasGoogleEnv ? 'configured' : 'missing'
     }
   });
 });
@@ -245,7 +190,6 @@ app.get('/api/health/deployment', async (req, res) => {
     process.env.AZURE_TENANT_ID &&
     process.env.AZURE_CLIENT_SECRET &&
     process.env.AZURE_SUBSCRIPTION_ID &&
-    process.env.AZURE_CLIENT_ID !== 'YOUR_CLIENT_ID' &&
     process.env.AZURE_CLIENT_ID !== ''
   );
 
@@ -264,22 +208,26 @@ app.get('/api/health/deployment', async (req, res) => {
 const apiPrefix = '/api';
 
 app.use(`${apiPrefix}/auth`, require('./routes/auth'));
-app.use(`${apiPrefix}/search`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/search'));
+app.use(`${apiPrefix}/search`, validateJwt, tenantContext, auditLogger, require('./routes/search'));
 
-app.use(`${apiPrefix}/subscriptions`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/subscriptions'));
-app.use(`${apiPrefix}/resources`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/resources'));
-app.use(`${apiPrefix}/monitoring`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/monitoring'));
-app.use(`${apiPrefix}/actions`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/actions'));
-app.use(`${apiPrefix}/incidents`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/incidents'));
-app.use(`${apiPrefix}/notifications`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/notifications'));
+// These routes are accessible to all authenticated users (any role)
+app.use(`${apiPrefix}/subscriptions`, validateJwt, tenantContext, auditLogger, require('./routes/subscriptions'));
+app.use(`${apiPrefix}/resources`, validateJwt, tenantContext, auditLogger, require('./routes/resources'));
+const monitoringRoutes = require('./routes/monitoring');
+app.use('/api/monitoring', validateJwt, tenantContext, auditLogger, monitoringRoutes);
+app.use(`${apiPrefix}/actions`, validateJwt, tenantContext, auditLogger, require('./routes/actions'));
+app.use(`${apiPrefix}/incidents`, validateJwt, tenantContext, auditLogger, require('./routes/incidents'));
+app.use(`${apiPrefix}/notifications`, validateJwt, tenantContext, auditLogger, require('./routes/notifications'));
+app.use(`${apiPrefix}/audit`, validateJwt, tenantContext, auditLogger, require('./routes/audit'));
+
+// These routes require Admin or SuperAdmin role
 app.use(`${apiPrefix}/ai`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/ai'));
 app.use(`${apiPrefix}/reports`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/reports'));
-app.use(`${apiPrefix}/audit`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/audit'));
 app.use(`${apiPrefix}/sentinel`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/sentinel'));
 app.use(`${apiPrefix}/governance`, validateJwt, tenantContext, adminOnly, auditLogger, require('./routes/governance'));
 
 // Compatibility Endpoints for Direct Verification Queries
-app.get(`${apiPrefix}/security`, validateJwt, tenantContext, adminOnly, auditLogger, async (req, res) => {
+app.get(`${apiPrefix}/security`, validateJwt, tenantContext, auditLogger, async (req, res) => {
   try {
     const db = await getDatabase();
     let subId = req.query.subscriptionId;
@@ -299,7 +247,7 @@ app.get(`${apiPrefix}/security`, validateJwt, tenantContext, adminOnly, auditLog
   }
 });
 
-app.get(`${apiPrefix}/cost`, validateJwt, tenantContext, adminOnly, auditLogger, async (req, res) => {
+app.get(`${apiPrefix}/cost`, validateJwt, tenantContext, auditLogger, async (req, res) => {
   try {
     const db = await getDatabase();
     let subId = req.query.subscriptionId;
@@ -319,7 +267,7 @@ app.get(`${apiPrefix}/cost`, validateJwt, tenantContext, adminOnly, auditLogger,
   }
 });
 
-app.get(`${apiPrefix}/backup`, validateJwt, tenantContext, adminOnly, auditLogger, async (req, res) => {
+app.get(`${apiPrefix}/backup`, validateJwt, tenantContext, auditLogger, async (req, res) => {
   try {
     const db = await getDatabase();
     let subId = req.query.subscriptionId;
@@ -340,7 +288,7 @@ app.get(`${apiPrefix}/backup`, validateJwt, tenantContext, adminOnly, auditLogge
 });
 
 // Status check endpoint (Refactored to show tenant status details)
-app.get('/api/status', validateJwt, tenantContext, adminOnly, async (req, res) => {
+app.get('/api/status', validateJwt, tenantContext, async (req, res) => {
   try {
     const db = await getDatabase();
     
@@ -373,9 +321,7 @@ async function startServer() {
     await getDatabase();
     console.log('[DB] SQLite database initialized successfully.');
 
-    // Start background resource discovery engine
-    const { startDiscoveryScheduler } = require('./services/discoveryEngine');
-    startDiscoveryScheduler();
+    // Background resource discovery engine is now started dynamically upon Microsoft Entra ID Login
 
     if (credentials) {
       https.createServer(credentials, app).listen(PORT, () => {

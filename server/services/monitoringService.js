@@ -1,116 +1,18 @@
 // ============================================================
 // Monitoring and Telemetry Service
-// Uses real Azure APIs when credentials are available.
-// Falls back to rich demo data for mock/demo subscriptions.
+// Uses real Azure APIs. Demo data fallbacks removed.
 // ============================================================
 
 const { getAzureClients } = require('./azureCredentialManager');
 const { getDatabase } = require('../db/database');
-
-// ── Demo data generators ────────────────────────────────────
-
-function generateDemoCostData(subId) {
-  const isHealthcare = subId === 'sub-healthcare-prod';
-  const isUniversity = subId === 'sub-university-prod';
-  const baseBudget = isHealthcare ? 2500 : isUniversity ? 1800 : 1200;
-  const spendRatio = isHealthcare ? 0.82 : isUniversity ? 0.61 : 0.48;
-
-  const currentSpend = Math.round(baseBudget * spendRatio * 100) / 100;
-
-  const today = new Date();
-  const dailyBreakdown = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
-    const base = currentSpend / 30;
-    const jitter = base * (0.6 + Math.random() * 0.8);
-    dailyBreakdown.push({ date: dateStr, cost: Math.round(jitter * 100) / 100 });
-  }
-
-  const byService = isHealthcare
-    ? [
-        { service: 'Microsoft.Web', cost: 480 },
-        { service: 'Microsoft.KeyVault', cost: 120 },
-        { service: 'Microsoft.Insights', cost: 95 },
-        { service: 'Microsoft.RecoveryServices', cost: 210 },
-        { service: 'Microsoft.OperationalInsights', cost: 340 },
-        { service: 'Azure Monitor', cost: 110 },
-      ]
-    : isUniversity
-    ? [
-        { service: 'Microsoft.Web', cost: 320 },
-        { service: 'Microsoft.Storage', cost: 185 },
-        { service: 'Microsoft.KeyVault', cost: 60 },
-        { service: 'Microsoft.Insights', cost: 85 },
-        { service: 'Microsoft.OperationalInsights', cost: 180 },
-        { service: 'Azure Monitor', cost: 75 },
-      ]
-    : [
-        { service: 'Microsoft.Compute', cost: 290 },
-        { service: 'Microsoft.Storage', cost: 120 },
-        { service: 'Microsoft.Network', cost: 80 },
-      ];
-
-  const projectedSpend = Math.round((currentSpend / new Date().getDate()) * 30 * 100) / 100;
-
-  return { currentSpend, projectedSpend, budget: baseBudget, currency: 'USD', dailyBreakdown, byService };
-}
-
-function generateDemoBackupData(subId) {
-  const isHealthcare = subId === 'sub-healthcare-prod';
-  if (!isHealthcare) {
-    return {
-      vaults: [],
-      totalProtectedItems: 0,
-      totalBackupJobs: 0,
-      failedJobs: 0,
-      healthScore: null,
-      message: 'No Recovery Services Vaults found in this subscription.'
-    };
-  }
-
-  const recentJobs = [
-    { name: 'rsv-hc-prod-backup-job-001', vaultName: 'rsv-hc-prod-backup', status: 'Completed', type: 'AzureIaasVM', timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString() },
-    { name: 'rsv-hc-prod-backup-job-002', vaultName: 'rsv-hc-prod-backup', status: 'Completed', type: 'AzureWorkload', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString() },
-    { name: 'rsv-hc-prod-backup-job-003', vaultName: 'rsv-hc-prod-backup', status: 'Completed', type: 'AzureIaasVM', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString() },
-  ];
-
-  return {
-    vaults: [{ name: 'rsv-hc-prod-backup', id: '/subscriptions/demo/resourceGroups/RG-Healthcare-Prod/providers/Microsoft.RecoveryServices/vaults/rsv-hc-prod-backup', location: 'southeastasia' }],
-    totalProtectedItems: 5,
-    totalBackupJobs: 3,
-    failedJobs: 0,
-    healthScore: 100,
-    recentJobs,
-  };
-}
-
-function generateDemoMetrics(resourceId) {
-  const now = new Date();
-  return Array.from({ length: 24 }, (_, i) => {
-    const ts = new Date(now.getTime() - (23 - i) * 3600 * 1000);
-    return {
-      timestamp: ts.toISOString(),
-      cpuPercentage: Math.round((10 + Math.random() * 30) * 10) / 10,
-      memoryAvailableBytes: Math.floor(2 * 1024 * 1024 * 1024 * (0.4 + Math.random() * 0.4)),
-      networkInBytes: Math.floor(Math.random() * 5000000),
-      networkOutBytes: Math.floor(Math.random() * 3000000),
-    };
-  });
-}
 
 // ── Service functions ───────────────────────────────────────
 
 /**
  * Get time-series metrics (CPU, Memory, Network) from Azure Monitor.
  */
-async function getResourceMetrics(tenantId, subscriptionId, resourceId) {
-  const clients = await getAzureClients(tenantId, subscriptionId);
-
-  if (clients.isDemo) {
-    return generateDemoMetrics(resourceId);
-  }
+async function getResourceMetrics(tenantId, subscriptionId, resourceId, userAccessToken = null) {
+  const clients = await getAzureClients(tenantId, subscriptionId, userAccessToken);
 
   const monitorClient = clients.monitorClient;
   const timespan = 'PT24H';
@@ -176,7 +78,7 @@ async function getResourceMetrics(tenantId, subscriptionId, resourceId) {
 /**
  * Get aggregated cost consumption stats from Azure Cost Management.
  */
-async function getCostConsumption(tenantId, subscriptionId) {
+async function getCostConsumption(tenantId, subscriptionId, userAccessToken = null) {
   const db = await getDatabase();
   const sub = await db.get(
     'SELECT * FROM azure_subscriptions WHERE tenant_id = ? AND (id = ? OR subscription_id = ?)',
@@ -184,11 +86,7 @@ async function getCostConsumption(tenantId, subscriptionId) {
   );
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    return generateDemoCostData(sub.id);
-  }
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
 
   const budgetRecord = await db.get(
     'SELECT amount FROM cost_budgets WHERE subscription_id = ?',
@@ -252,7 +150,7 @@ async function getCostConsumption(tenantId, subscriptionId) {
 /**
  * Discover all Recovery Services Vaults and return backup health.
  */
-async function getBackupHealth(tenantId, subscriptionId) {
+async function getBackupHealth(tenantId, subscriptionId, userAccessToken = null) {
   const db = await getDatabase();
   const sub = await db.get(
     'SELECT * FROM azure_subscriptions WHERE tenant_id = ? AND (id = ? OR subscription_id = ?)',
@@ -260,11 +158,7 @@ async function getBackupHealth(tenantId, subscriptionId) {
   );
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    return generateDemoBackupData(sub.id);
-  }
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
 
   const backupClient = clients.backupClient;
   const resourceClient = clients.resourceClient;
@@ -345,7 +239,7 @@ async function getBackupHealth(tenantId, subscriptionId) {
 /**
  * Get active Azure Monitor alerts for a subscription.
  */
-async function getActiveAlerts(tenantId, subscriptionId) {
+async function getActiveAlerts(tenantId, subscriptionId, userAccessToken = null) {
   const db = await getDatabase();
   const sub = await db.get(
     'SELECT * FROM azure_subscriptions WHERE tenant_id = ? AND (id = ? OR subscription_id = ?)',
@@ -353,23 +247,7 @@ async function getActiveAlerts(tenantId, subscriptionId) {
   );
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    // Return demo alerts based on seeded incidents
-    return [
-      {
-        id: 'alert-demo-001',
-        name: 'High CPU Alert',
-        severity: 'Sev2',
-        state: 'New',
-        condition: 'Percentage CPU > 85%',
-        targetResource: 'vm-hc-prod-web',
-        firedAt: new Date(Date.now() - 3600000).toISOString(),
-        description: 'CPU utilization exceeded 85% threshold.'
-      }
-    ];
-  }
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
 
   const alerts = [];
   try {
@@ -402,9 +280,9 @@ async function getActiveAlerts(tenantId, subscriptionId) {
 }
 
 /**
- * Get secure score — returns demo value when in demo mode.
+ * Get secure score.
  */
-async function getSecurityScore(tenantId, subscriptionId) {
+async function getSecurityScore(tenantId, subscriptionId, userAccessToken = null) {
   const db = await getDatabase();
   const sub = await db.get(
     'SELECT * FROM azure_subscriptions WHERE tenant_id = ? AND (id = ? OR subscription_id = ?)',
@@ -412,17 +290,7 @@ async function getSecurityScore(tenantId, subscriptionId) {
   );
   if (!sub) throw new Error('Subscription not found');
 
-  const clients = await getAzureClients(tenantId, sub.id);
-
-  if (clients.isDemo) {
-    const scoreMap = {
-      'sub-healthcare-prod': 92,
-      'sub-university-prod': 82,
-      'sub-corporate-it': 78,
-      'sub-dev-test': 65,
-    };
-    return { score: scoreMap[sub.id] || 80, max: 100 };
-  }
+  const clients = await getAzureClients(tenantId, sub.id, userAccessToken);
 
   // Real Defender call would go here
   return { score: null, max: 100 };

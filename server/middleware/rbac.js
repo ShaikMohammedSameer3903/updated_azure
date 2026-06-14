@@ -3,7 +3,7 @@
 // ============================================================
 
 // Role hierarchy map (lower index = more privileges)
-const ROLE_HIERARCHY = ['OWNER', 'ADMIN', 'OPERATOR', 'AUDITOR', 'VIEWER'];
+const ROLE_HIERARCHY = ['SUPERADMIN', 'ADMIN', 'OPERATOR', 'READER'];
 
 /**
  * Authorize roles for a request.
@@ -16,7 +16,12 @@ function authorizeRoles(...allowedRoles) {
       return res.status(403).json({ error: 'Access Denied: No user role resolved in tenant context' });
     }
 
-    const hasRole = allowedRoles.some(r => r.toUpperCase() === req.userRole.toUpperCase());
+    const userRoleUpper = req.userRole.toUpperCase();
+    const isSuperAdmin = userRoleUpper === 'SUPERADMIN';
+    const hasRole = isSuperAdmin || allowedRoles.some(r => {
+      const u = r.toUpperCase();
+      return u === userRoleUpper || (u === 'OWNER' && isSuperAdmin);
+    });
     if (!hasRole) {
       return res.status(403).json({
         error: `Access Denied: Required role(s) [${allowedRoles.join(', ')}] not met. Your role: [${req.userRole}]`

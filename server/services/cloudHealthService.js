@@ -12,12 +12,12 @@ const { calculateRiskScore } = require('./riskEngine');
  * Compute a composite Cloud Health Score (0-100) from live Azure data.
  * @returns {Object} Score + dimensional breakdown
  */
-async function getCloudHealthScore(tenantId, subscriptionId) {
+async function getCloudHealthScore(tenantId, subscriptionId, userAccessToken = null) {
   const results = await Promise.allSettled([
-    getSecureScore(tenantId, subscriptionId),
-    getBackupHealth(tenantId, subscriptionId),
-    calculateRiskScore(tenantId, subscriptionId),
-    getDefenderRecommendations(tenantId, subscriptionId)
+    getSecureScore(tenantId, subscriptionId, userAccessToken),
+    getBackupHealth(tenantId, subscriptionId, userAccessToken),
+    calculateRiskScore(tenantId, subscriptionId, null, userAccessToken),
+    getDefenderRecommendations(tenantId, subscriptionId, userAccessToken)
   ]);
 
   const [secureScoreResult, backupResult, riskResult, recommendationsResult] = results;

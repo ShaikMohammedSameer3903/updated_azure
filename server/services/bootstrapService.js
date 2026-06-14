@@ -104,6 +104,26 @@ function bootstrapEnv() {
 
   // Load environment variables into process.env using dotenv path
   require('dotenv').config({ path: envPath });
+
+  // Startup validation for Microsoft Entra ID
+  const missingVars = [];
+  if (!process.env.AZURE_CLIENT_ID || process.env.AZURE_CLIENT_ID.trim() === '' || process.env.AZURE_CLIENT_ID.includes('YOUR_')) {
+    missingVars.push('AZURE_CLIENT_ID');
+  }
+  if (!process.env.AZURE_TENANT_ID || process.env.AZURE_TENANT_ID.trim() === '' || process.env.AZURE_TENANT_ID.includes('YOUR_')) {
+    missingVars.push('AZURE_TENANT_ID');
+  }
+  
+  if (missingVars.length > 0) {
+    console.warn('\n================================================================');
+    console.warn('⚠️  CRITICAL VALIDATION ALERT: Microsoft Entra ID config missing/incomplete.');
+    console.warn(`Missing variables: ${missingVars.join(', ')}`);
+    console.warn('Actionable Instructions:');
+    console.warn('1. Register an application in Microsoft Entra Admin Center.');
+    console.warn('2. Configure SPA Platform with redirect URI: http://localhost:5173');
+    console.warn('3. Copy Client ID and Tenant ID into your .env file.');
+    console.warn('================================================================\n');
+  }
 }
 
 module.exports = {

@@ -23,9 +23,9 @@ async function verifySubscription(tenantId, subId) {
 }
 
 // ── 1. GET /api/monitoring/metrics ──────────────────────────
-// Live CPU/Memory/Network metrics from Azure Monitor
 router.get('/metrics', async (req, res) => {
   const { subscriptionId, resourceId } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId || !resourceId) {
     return res.status(400).json({ error: 'subscriptionId and resourceId are required.' });
   }
@@ -33,7 +33,7 @@ router.get('/metrics', async (req, res) => {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
-    const metrics = await getResourceMetrics(req.tenantId, sub.id, resourceId);
+    const metrics = await getResourceMetrics(req.tenantId, sub.id, resourceId, userAccessToken);
     res.json(metrics);
   } catch (err) {
     console.error('[ROUTES] GET /monitoring/metrics failed:', err.message);
@@ -42,15 +42,15 @@ router.get('/metrics', async (req, res) => {
 });
 
 // ── 2. GET /api/monitoring/cost ──────────────────────────────
-// Live cost from Azure Cost Management
 router.get('/cost', async (req, res) => {
   const { subscriptionId } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId) return res.status(400).json({ error: 'subscriptionId is required.' });
   try {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
-    const data = await getCostConsumption(req.tenantId, sub.id);
+    const data = await getCostConsumption(req.tenantId, sub.id, userAccessToken);
     res.json(data);
   } catch (err) {
     console.error('[ROUTES] GET /monitoring/cost failed:', err.message);
@@ -59,15 +59,15 @@ router.get('/cost', async (req, res) => {
 });
 
 // ── 3. GET /api/monitoring/backup ──────────────────────────
-// Live backup health from Recovery Services
 router.get('/backup', async (req, res) => {
   const { subscriptionId } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId) return res.status(400).json({ error: 'subscriptionId is required.' });
   try {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
-    const data = await getBackupHealth(req.tenantId, sub.id);
+    const data = await getBackupHealth(req.tenantId, sub.id, userAccessToken);
     res.json(data);
   } catch (err) {
     console.error('[ROUTES] GET /monitoring/backup failed:', err.message);
@@ -76,15 +76,15 @@ router.get('/backup', async (req, res) => {
 });
 
 // ── 4. GET /api/monitoring/alerts ───────────────────────────
-// Active Azure Monitor alerts
 router.get('/alerts', async (req, res) => {
   const { subscriptionId } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId) return res.status(400).json({ error: 'subscriptionId is required.' });
   try {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
-    const data = await getActiveAlerts(req.tenantId, sub.id);
+    const data = await getActiveAlerts(req.tenantId, sub.id, userAccessToken);
     res.json(data);
   } catch (err) {
     console.error('[ROUTES] GET /monitoring/alerts failed:', err.message);
@@ -93,19 +93,19 @@ router.get('/alerts', async (req, res) => {
 });
 
 // ── 5. GET /api/monitoring/defender ─────────────────────────
-// Defender for Cloud: score + alerts + recommendations
 router.get('/defender', async (req, res) => {
   const { subscriptionId } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId) return res.status(400).json({ error: 'subscriptionId is required.' });
   try {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
     const [score, recommendations, alerts, compliance] = await Promise.allSettled([
-      getSecureScore(req.tenantId, sub.id),
-      getDefenderRecommendations(req.tenantId, sub.id),
-      getDefenderAlerts(req.tenantId, sub.id),
-      getComplianceResults(req.tenantId, sub.id)
+      getSecureScore(req.tenantId, sub.id, userAccessToken),
+      getDefenderRecommendations(req.tenantId, sub.id, userAccessToken),
+      getDefenderAlerts(req.tenantId, sub.id, userAccessToken),
+      getComplianceResults(req.tenantId, sub.id, userAccessToken)
     ]);
 
     res.json({
@@ -127,17 +127,17 @@ router.get('/defender', async (req, res) => {
 });
 
 // ── 6. GET /api/monitoring/advisor ──────────────────────────
-// Azure Advisor recommendations and scores
 router.get('/advisor', async (req, res) => {
   const { subscriptionId, category } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId) return res.status(400).json({ error: 'subscriptionId is required.' });
   try {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
     const [recs, scores] = await Promise.allSettled([
-      getAdvisorRecommendations(req.tenantId, sub.id),
-      getAdvisorScore(req.tenantId, sub.id)
+      getAdvisorRecommendations(req.tenantId, sub.id, userAccessToken),
+      getAdvisorScore(req.tenantId, sub.id, userAccessToken)
     ]);
 
     let recommendations = recs.status === 'fulfilled' ? recs.value : [];
@@ -162,22 +162,22 @@ router.get('/advisor', async (req, res) => {
 });
 
 // ── 7. GET /api/monitoring/health ───────────────────────────
-// Azure Service Health events + planned maintenance
 router.get('/health', async (req, res) => {
   const { subscriptionId, resourceId } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId) return res.status(400).json({ error: 'subscriptionId is required.' });
   try {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
     if (resourceId) {
-      const health = await getResourceHealth(req.tenantId, sub.id, resourceId);
+      const health = await getResourceHealth(req.tenantId, sub.id, resourceId, userAccessToken);
       return res.json(health);
     }
 
     const [events, maintenance] = await Promise.allSettled([
-      getServiceHealthAlerts(req.tenantId, sub.id),
-      getPlannedMaintenance(req.tenantId, sub.id)
+      getServiceHealthAlerts(req.tenantId, sub.id, userAccessToken),
+      getPlannedMaintenance(req.tenantId, sub.id, userAccessToken)
     ]);
 
     res.json({
@@ -195,15 +195,15 @@ router.get('/health', async (req, res) => {
 });
 
 // ── 8. GET /api/monitoring/risk ─────────────────────────────
-// Live risk score from Risk Engine
 router.get('/risk', async (req, res) => {
   const { subscriptionId, resourceGroup } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId) return res.status(400).json({ error: 'subscriptionId is required.' });
   try {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
-    const data = await calculateRiskScore(req.tenantId, sub.id, resourceGroup || null);
+    const data = await calculateRiskScore(req.tenantId, sub.id, resourceGroup || null, userAccessToken);
     res.json(data);
   } catch (err) {
     console.error('[ROUTES] GET /monitoring/risk failed:', err.message);
@@ -212,18 +212,40 @@ router.get('/risk', async (req, res) => {
 });
 
 // ── 9. GET /api/monitoring/cloud-health ─────────────────────
-// Composite Cloud Health Score
 router.get('/cloud-health', async (req, res) => {
   const { subscriptionId } = req.query;
+  const userAccessToken = req.azureAccessToken || req.headers['x-azure-token'] || null;
   if (!subscriptionId) return res.status(400).json({ error: 'subscriptionId is required.' });
   try {
     const sub = await verifySubscription(req.tenantId, subscriptionId);
     if (!sub) return res.status(404).json({ error: 'Subscription not found or access denied.' });
 
-    const data = await getCloudHealthScore(req.tenantId, sub.id);
+    const data = await getCloudHealthScore(req.tenantId, sub.id, userAccessToken);
     res.json(data);
   } catch (err) {
     console.error('[ROUTES] GET /monitoring/cloud-health failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── 10. GET /api/monitoring/traffic ─────────────────────────
+router.get('/traffic', (req, res) => {
+  try {
+    const getTrafficStats = req.app.get('getTrafficStats');
+    if (getTrafficStats) {
+      return res.json(getTrafficStats());
+    }
+    res.json({
+      requestsPerSecond: 0,
+      totalRequests: 0,
+      activeConnections: 0,
+      averageResponseTime: 0,
+      successRate: 100,
+      errorRate: 0,
+      recentRequests: []
+    });
+  } catch (err) {
+    console.error('[ROUTES] GET /monitoring/traffic failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

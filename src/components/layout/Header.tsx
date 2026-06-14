@@ -3,7 +3,7 @@
 // ============================================================
 
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Sun, Moon, RefreshCw, Menu, ChevronDown } from 'lucide-react';
+import { Search, Bell, Sun, Moon, RefreshCw, Menu, ChevronDown, Sparkles } from 'lucide-react';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAppStore, TENANT_CONFIGS, type IndustryTenant } from '../../store/appStore';
 import { useEffect, useCallback, useState, useRef } from 'react';
@@ -35,7 +35,7 @@ export default function Header() {
   const {
     isRefreshing, lastUpdated, unreadCount,
     globalSearchQuery, setGlobalSearchQuery,
-    toggleSidebar,
+    toggleSidebar, toggleActivityPanel, activityPanelCollapsed,
     subscriptions, activeSubscriptionId, setActiveSubscription,
     autoRefreshEnabled, refreshInterval,
     activeEnvironment, setActiveEnvironment,
@@ -206,7 +206,7 @@ export default function Header() {
         </div>
 
         {/* Subscription selector */}
-        {subscriptions.length > 1 && (
+        {subscriptions.length > 0 && (
           <div style={{ position: 'relative' }} ref={subDropdownRef}>
             <button
               style={{
@@ -228,13 +228,13 @@ export default function Header() {
               <ChevronDown size={12} style={{ flexShrink: 0 }} />
             </button>
             {showSubDropdown && (
-              <div className="dropdown-menu" style={{ minWidth: 220, left: 0, right: 'auto' }}>
+              <div className="dropdown-menu" style={{ minWidth: 220, left: 0, right: 'auto', background: '#16192b', border: '1px solid rgba(255,255,255,0.1)' }}>
                 {subscriptions.map(sub => (
                   <div
                     key={sub.id}
                     className="dropdown-item"
                     onClick={() => { setActiveSubscription(sub.id); setShowSubDropdown(false); }}
-                    style={{ fontWeight: sub.id === activeSubscriptionId ? 700 : 400 }}
+                    style={{ fontWeight: sub.id === activeSubscriptionId ? 700 : 400, padding: '8px 12px', cursor: 'pointer', color: 'white' }}
                   >
                     {sub.name || sub.displayName}
                   </div>
@@ -271,6 +271,20 @@ export default function Header() {
           aria-label="Toggle theme"
         >
           {isDark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+
+        {/* Discovery Scan Status Panel Toggle */}
+        <button
+          className="header-icon-btn"
+          onClick={toggleActivityPanel}
+          title={activityPanelCollapsed ? 'Show Activity & Discovery Drawer' : 'Hide Activity & Discovery Drawer'}
+          aria-label="Toggle Activity & Discovery Drawer"
+          style={{
+            color: activityPanelCollapsed ? 'var(--text-secondary)' : '#0078D4',
+            background: activityPanelCollapsed ? 'transparent' : 'rgba(0, 120, 212, 0.08)',
+          }}
+        >
+          <Sparkles size={16} className={isRefreshing ? 'animate-pulse' : ''} />
         </button>
 
         {/* Notifications */}

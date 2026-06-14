@@ -552,6 +552,51 @@ export default function Actions() {
                     <option value="Windows Server 2022">Windows Server 2022</option>
                   </select>
                 </div>
+
+                {/* Cost Preview */}
+                <div style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: 6,
+                  padding: '10px 12px',
+                  fontSize: 12,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  color: 'var(--text-secondary)'
+                }}>
+                  <span>Estimated VM Cost:</span>
+                  <span style={{ fontWeight: 700, color: '#10b981' }}>
+                    {vmSize === 'Standard_B2s' ? '₹900/month (₹30/day)' : vmSize === 'Standard_D2s_v5' ? '₹1,800/month (₹60/day)' : '₹3,600/month (₹120/day)'}
+                  </span>
+                </div>
+
+                {/* Provisioning Stage View */}
+                {vmLoading && (
+                  <div style={{
+                    background: 'rgba(0,0,0,0.2)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    borderRadius: 8,
+                    padding: 12,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#0078d4', marginBottom: 4 }}>ARM PROVISIONING PIPELINE</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
+                      <span>1. Request Validation</span>
+                      <span style={{ color: '#10b981', fontWeight: 600 }}>✓ COMPLETE</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
+                      <span>2. Azure Authentication</span>
+                      <span style={{ color: '#10b981', fontWeight: 600 }}>✓ COMPLETE</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
+                      <span>3. ARM Template Provisioning</span>
+                      <span style={{ color: '#f59e0b', fontWeight: 600 }} className="animate-pulse">⏳ IN PROGRESS</span>
+                    </div>
+                  </div>
+                )}
+
                 <button 
                   type="submit" 
                   className="btn btn-primary" 

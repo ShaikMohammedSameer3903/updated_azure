@@ -14,6 +14,7 @@ import { useAppStore } from './store/appStore';
 import { useOperationStore } from './store/operationStore';
 import { api } from './services/api';
 import DiagnosticPage from './pages/DiagnosticPage';
+import { ProtectedRoute } from './components/common/ProtectedRoute';
 
 // Pages
 import Login from './pages/Login';
@@ -31,13 +32,18 @@ import GovernanceDashboard from './pages/GovernanceDashboard';
 import BackupDashboard from './pages/BackupDashboard';
 import CostDashboard from './pages/CostDashboard';
 import SOCDashboard from './pages/SOCDashboard';
+import CommandCenter from './pages/CommandCenter';
+import DemoTour from './pages/DemoTour';
+import OnboardingWizard from './components/common/OnboardingWizard';
 
-import { isApiConfigValid } from './services/api';
 import { API_BASE_URL } from './config/environment';
 
+import { useMsal } from '@azure/msal-react';
+
 export default function App() {
-  const { isAuthenticated, isLoading, getAzureToken } = useAuth();
+  const { isAuthenticated, isLoading, getAzureToken, user } = useAuth();
   const { subscriptions, setSubscriptions, activeSubscriptionId, setActiveSubscription, setResources } = useAppStore();
+  const { instance } = useMsal();
 
   const [isConfigValid, setIsConfigValid] = useState<boolean | null>(null);
 
@@ -47,13 +53,11 @@ export default function App() {
         const response = await fetch(`${API_BASE_URL}/api/health/diagnose`);
         if (response.ok) {
           const res = await response.json();
-          // Only block if database is offline or JWT is missing
           if (res.database === 'Critical' || res.jwtSecret === false) {
             setIsConfigValid(false);
             return;
           }
           if (res.azure === 'Critical') {
-            // Push alert to notifications list if not already there
             const state = useAppStore.getState();
             if (!state.notifications.some(n => n.id === 'warn-azure-config')) {
               state.addNotification({
@@ -78,11 +82,49 @@ export default function App() {
     checkConfig();
   }, []);
 
-
   useEffect(() => {
     if (isAuthenticated) {
       const loadSubscriptions = async () => {
         try {
+          // 1. Discover subscriptions from Azure if logged in via Microsoft
+          if (user?.provider === 'Microsoft' && instance.getAllAccounts().length > 0) {
+            try {
+              const activeAccount = instance.getActiveAccount() || instance.getAllAccounts()[0];
+              const tokenResult = await instance.acquireTokenSilent({
+                scopes: ['https://management.azure.com/user_impersonation'],
+                account: activeAccount,
+              });
+              
+              if (tokenResult?.accessToken) {
+                const armResponse = await fetch('https://management.azure.com/subscriptions?api-version=2020-01-01', {
+                  headers: {
+                    'Authorization': `Bearer ${tokenResult.accessToken}`
+                  }
+                });
+                
+                if (armResponse.ok) {
+                  const armData = await armResponse.json();
+                  const armSubs = armData.value || [];
+                  
+                  for (const s of armSubs) {
+                    try {
+                      await api.post('/api/subscriptions', {
+                        subscriptionId: s.subscriptionId,
+                        name: s.displayName,
+                        authType: 'MSAL'
+                      });
+                    } catch (regErr) {
+                      // Already registered
+                    }
+                  }
+                }
+              }
+            } catch (azureErr) {
+              console.warn('[SUBSCRIPTION DISCOVERY] Dynamic sync failed:', azureErr);
+            }
+          }
+
+          // 2. Fetch the registered subscriptions from backend
           const subs = await api.get<any[]>('/api/subscriptions');
           setSubscriptions(subs);
           if (subs.length > 0 && !activeSubscriptionId) {
@@ -94,23 +136,37 @@ export default function App() {
       };
       loadSubscriptions();
     }
-  }, [isAuthenticated, activeSubscriptionId, setSubscriptions, setActiveSubscription]);
+  }, [isAuthenticated, activeSubscriptionId, setSubscriptions, setActiveSubscription, user, instance]);
 
   useEffect(() => {
     if (isAuthenticated && activeSubscriptionId) {
       const loadResources = async () => {
         try {
+          useAppStore.setState({ resourcesLoading: true, isRefreshing: true });
+          
+          const startTime = Date.now();
+          try {
+            await api.post(`/api/subscriptions/${activeSubscriptionId}/sync`);
+          } catch (syncErr) {
+            console.error('[DISCOVERY] Immediate scan sync failed:', syncErr);
+          }
+          const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+          localStorage.setItem('cloudops-last-scan-duration', duration);
+          window.dispatchEvent(new CustomEvent('cloudops-scan-complete', { detail: { duration } }));
+
           const res = await api.get<any[]>('/api/resources', { params: { subscriptionId: activeSubscriptionId } });
           setResources(res);
+          useAppStore.setState({ lastResourceSync: new Date().toISOString() });
         } catch (err) {
           console.error('Failed to load resources globally:', err);
+        } finally {
+          useAppStore.setState({ resourcesLoading: false, isRefreshing: false });
         }
       };
       loadResources();
     }
   }, [isAuthenticated, activeSubscriptionId, setResources]);
 
-  // Restore active operations and logs on reload
   useEffect(() => {
     if (isAuthenticated) {
       const restoreOperations = async () => {
@@ -292,12 +348,42 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <Login />;
-  }
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/*" element={
+        <ProtectedRoute>
+          <AppShell />
+        </ProtectedRoute>
+      } />
+    </Routes>
+  );
+}
+
+function AppShell() {
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      const onboarded = localStorage.getItem('cloudops-onboarded');
+      if (!onboarded) {
+        setShowOnboarding(true);
+      }
+    }
+  }, [isAuthenticated]);
 
   return (
     <div className="app-shell">
+      {showOnboarding && (
+        <OnboardingWizard 
+          onClose={() => setShowOnboarding(false)} 
+          onComplete={() => {
+            localStorage.setItem('cloudops-onboarded', 'true');
+            setShowOnboarding(false);
+          }} 
+        />
+      )}
       <Sidebar />
       <div className="main-content">
         <Header />
@@ -317,6 +403,8 @@ export default function App() {
               <Route path="/backup"      element={<BackupDashboard />} />
               <Route path="/ai"          element={<AiAssistant />} />
               <Route path="/reports"     element={<Reports />} />
+              <Route path="/command-center" element={<CommandCenter />} />
+              <Route path="/demo-tour"      element={<DemoTour />} />
               <Route path="/settings"    element={<Settings />} />
               <Route path="*"            element={<Navigate to="/" replace />} />
             </Routes>

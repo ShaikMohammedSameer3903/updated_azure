@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Server, Activity, AlertTriangle, Zap,
   Brain, FileBarChart, Settings, ChevronLeft, ChevronRight,
   LogOut, Cloud, ShieldAlert, ShieldCheck, BarChart3,
-  HardDrive, Landmark, PieChart, Siren, Globe,
+  HardDrive, Landmark, PieChart, Siren, Globe, Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthProvider';
 import { useAppStore, TENANT_CONFIGS, type IndustryTenant } from '../../store/appStore';
@@ -15,6 +15,7 @@ import HealthWidget from './HealthWidget';
 
 const operationsItems = [
   { id: 'dashboard',    label: 'Executive View',   icon: LayoutDashboard, path: '/' },
+  { id: 'commandCenter', label: 'Command Center',   icon: Globe,           path: '/command-center' },
   { id: 'resources',    label: 'Resources',         icon: Server,          path: '/resources' },
   { id: 'monitoring',   label: 'Monitoring',        icon: Activity,        path: '/monitoring' },
   { id: 'cost',         label: 'Cost Management',   icon: PieChart,        path: '/cost' },
@@ -33,6 +34,7 @@ const analyticsItems = [
   { id: 'backup',       label: 'Backup & DR',        icon: HardDrive,       path: '/backup' },
   { id: 'ai',           label: 'AI Assistant',        icon: Brain,           path: '/ai' },
   { id: 'reports',      label: 'Reports',             icon: FileBarChart,    path: '/reports' },
+  { id: 'demoTour',     label: 'Recruiter Demo',      icon: Sparkles,        path: '/demo-tour' },
   { id: 'settings',     label: 'Settings',            icon: Settings,        path: '/settings' },
 ];
 

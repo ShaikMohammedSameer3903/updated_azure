@@ -16,10 +16,22 @@ router.get('/', async (req, res) => {
       [req.tenantId]
     );
 
-    const parsedLogs = logs.map(log => ({
-      ...log,
-      details: log.details ? JSON.parse(log.details) : {}
-    }));
+    const parsedLogs = [];
+    let lastLog = null;
+    for (const log of logs) {
+      const parsed = {
+        ...log,
+        details: log.details ? JSON.parse(log.details) : {}
+      };
+      if (lastLog && 
+          lastLog.action === parsed.action && 
+          lastLog.user_email === parsed.user_email && 
+          Math.abs(new Date(lastLog.created_at).getTime() - new Date(parsed.created_at).getTime()) < 2000) {
+        continue;
+      }
+      parsedLogs.push(parsed);
+      lastLog = parsed;
+    }
 
     res.json(parsedLogs);
   } catch (error) {

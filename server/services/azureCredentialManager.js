@@ -52,7 +52,39 @@ async function getSubscriptionCredentials(tenantId, subscriptionId) {
 /**
  * Build and cache all Azure SDK clients for a given subscription.
  */
-async function getAzureClients(tenantId, subscriptionId) {
+async function getAzureClients(tenantId, subscriptionId, userAccessToken = null) {
+  if (userAccessToken) {
+    const credential = {
+      getToken: async () => ({
+        token: userAccessToken,
+        expiresOnTimestamp: Date.now() + 3600000
+      })
+    };
+
+    const sub = await getSubscriptionCredentials(tenantId, subscriptionId);
+    const realSubId = sub ? sub.subscription_id : subscriptionId;
+
+    return {
+      credential,
+      isDemo: false,
+      subscriptionId: realSubId,
+      internalId: sub ? sub.id : subscriptionId,
+      name: sub ? sub.name : 'Azure Subscription',
+      tenantId: tenantId,
+
+      resourceClient: new ResourceManagementClient(credential, realSubId),
+      computeClient: new ComputeManagementClient(credential, realSubId),
+      storageClient: new StorageManagementClient(credential, realSubId),
+      networkClient: new NetworkManagementClient(credential, realSubId),
+      keyVaultClient: new KeyVaultManagementClient(credential, realSubId),
+      monitorClient: new MonitorClient(credential, realSubId),
+      policyClient: new PolicyClient(credential, realSubId),
+      authorizationClient: new AuthorizationManagementClient(credential, realSubId),
+      backupClient: new RecoveryServicesBackupClient(credential, realSubId),
+      consumptionClient: new ConsumptionManagementClient(credential, realSubId),
+    };
+  }
+
   const cacheKey = `${tenantId}:${subscriptionId}`;
 
   if (clientCache.has(cacheKey)) {
@@ -67,13 +99,12 @@ async function getAzureClients(tenantId, subscriptionId) {
     throw err;
   }
 
-  const hasCredentials = (
+  const hasCredentials = !!(
     sub.client_id &&
     sub.client_secret &&
     sub.azure_tenant_id &&
     sub.client_id !== 'demo-client-id' &&
     sub.client_id !== 'mock-client-id' &&
-    sub.client_id !== 'YOUR_CLIENT_ID' &&
     sub.client_id !== ''
   );
 
@@ -86,16 +117,11 @@ async function getAzureClients(tenantId, subscriptionId) {
 
   // Real Azure credential path or development mode fallback
   try {
-    let credential;
-    if (hasCredentials) {
-      credential = new ClientSecretCredential(
-        sub.azure_tenant_id,
-        sub.client_id,
-        sub.client_secret
-      );
-    } else {
-      credential = new DefaultAzureCredential();
-    }
+    const credential = new ClientSecretCredential(
+      sub.azure_tenant_id,
+      sub.client_id,
+      sub.client_secret
+    );
 
     const realSubId = sub.subscription_id;
 
