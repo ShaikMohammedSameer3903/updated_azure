@@ -208,10 +208,12 @@ interface AppState {
 
   // ── UI State ──
   sidebarCollapsed: boolean;
+  mobileSidebarOpen: boolean;
   activityPanelCollapsed: boolean;
   commandPaletteOpen: boolean;
   globalSearchQuery: string;
   toggleSidebar: () => void;
+  setMobileSidebarOpen: (open: boolean) => void;
   toggleActivityPanel: () => void;
   setCommandPaletteOpen: (open: boolean) => void;
   setGlobalSearchQuery: (query: string) => void;
